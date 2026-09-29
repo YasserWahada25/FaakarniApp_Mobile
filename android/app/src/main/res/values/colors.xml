@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand violet = logo background (AppColors.brandDeep). Used behind the
+         launch logo and the adaptive launcher icon, so both blend seamlessly. -->
+    <color name="splash_background">#5C3486</color>
+    <color name="ic_launcher_background">#5C3486</color>
+</resources>

@@ -13,47 +13,46 @@ en entier avant de toucher au code.
 
 | Dépôt | Branche | État |
 |---|---|---|
-| Mobile `YasserWahada25/FaakarniApp_Mobile` | **`feature/communication-posts-medical`** | Communication, Posts, navigation, suivi médical branchés sur l'API |
+| Mobile `YasserWahada25/FaakarniApp_Mobile` | **`main`** (commits `1820d8e` → `bd48730`) | Communication, Posts, navigation, suivi médical branchés sur l'API |
 | Backend `YasserWahada25/Esprit_PI_4SAE5_2026_FakarniApp` | `main` | 11 commits de corrections (déjà déployés sur le Codespace via la CI) |
 
 Le mobile parle **uniquement à la Spring Cloud Gateway (port 8090)**, comme le web.
 
-Travail réalisé **sur cette branche** :
+Travail réalisé **dans ces commits** (un par section) :
 - couche réseau commune (`ApiConfig`, `ApiClient`, `AuthSession`) ;
 - **Communication** : groupes (CRUD, membres, rôles, image de couverture) et messagerie (vrais utilisateurs, temps réel STOMP + repli en polling) ;
 - **Posts** : fil, création/modification avec image, suppression, réactions, commentaires/réponses, « My Posts » ;
 - **Navigation** : *Posts* remplace *Geofencing* dans la barre du bas ;
 - **Suivi médical** : dossier de l'utilisateur, liste des patients, dossier patient (IRM, édition, suppression), assistant NeuroScan en 3 étapes avec analyse IA réelle.
 
-Travail **non présent** sur cette branche (il est sur l'autre machine) :
+Travail **non présent** dans ces commits (il est sur l'autre machine, non commité) :
 authentification (écrans sign-in/sign-up/mot de passe), activités éducatives, événements.
 
 ---
 
 ## 2. Procédure de fusion (à suivre dans l'ordre)
 
+Le `main` local de l'autre machine est resté sur `1845784` (« UI Push first step »)
+avec des modifications non commitées ; `origin/main` a 5 commits de plus.
+
 ```bash
-# 1. Mettre à l'abri le travail local (auth, éducatif, events) sur sa propre branche
-git checkout -b feature/auth-education-events
+# 1. Commiter d'abord le travail local (auth, éducatif, events) pour ne rien perdre
 git add -A
 git commit -m "feat: auth, educational activities and events API integration"
-git push -u origin feature/auth-education-events
 
-# 2. Récupérer et fusionner cette branche
-git fetch origin
-git merge origin/feature/communication-posts-medical
+# 2. Récupérer origin/main et le fusionner (merge, pas rebase : un seul passage de conflits)
+git pull --no-rebase origin main
 
 # 3. Après résolution des conflits
 flutter pub get
 dart analyze          # doit afficher "No issues found!"
-flutter test          # 25 tests sur cette branche, tous verts
+flutter test          # les 25 tests de origin/main + ceux de l'auth, tous verts
+git push origin main
 ```
-
-Ensuite, ouvrir une pull request de `feature/auth-education-events` vers `main`.
 
 ### Zones de conflit attendues
 
-| Fichier | Ce que cette branche y a changé | Résolution |
+| Fichier | Ce que ces commits y ont changé | Résolution |
 |---|---|---|
 | `pubspec.yaml` / `pubspec.lock` | Ajout de `http`, `http_parser`, `stomp_dart_client`, `image_picker` | Garder **l'union** des dépendances, puis `flutter pub get` (régénère le lock) |
 | `lib/core/router/app_router.dart` | Posts devient la 3ᵉ branche du `StatefulShellRoute` (sous-routes `create`, `edit/:id`, `my-posts` sur `_rootKey`) ; Geofencing devient une route plein écran de premier niveau | Garder ces deux déplacements **et** les ajouts auth (redirect, garde, routes) |
@@ -88,7 +87,7 @@ pas après un changement de ce fichier (valeurs compilées) : relancer l'app.
 
 ### 3.1 Brancher l'authentification sur `AuthSession` (obligatoire)
 
-Toutes les fonctionnalités de cette branche lisent l'utilisateur via
+Toutes les fonctionnalités de ces commits lisent l'utilisateur via
 `AuthSession.instance.userId` / `.user` et le jeton via `ApiClient`. En
 attendant l'auth, `AuthSession` connecte automatiquement le compte de `env/dev.json`.
 

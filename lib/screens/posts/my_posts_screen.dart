@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/network/api_client.dart';
 import '../../core/router/app_routes.dart';
+import '../../core/session/auth_session.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../models/post.dart';
+import '../../services/post_service.dart';
 import '../../widgets/common/async_state_view.dart';
 import '../../widgets/common/dialogs.dart';
 import '../../widgets/common/section_header.dart';
@@ -19,26 +22,76 @@ class MyPostsScreen extends StatefulWidget {
 }
 
 class _MyPostsScreenState extends State<MyPostsScreen> {
-  // Filled by the posts API (posts of the signed-in user).
-  final List<Post> _posts = [];
-  ViewStatus _status = ViewStatus.ready;
+  final _service = PostService.instance;
+
+  List<Post> _posts = [];
+  Map<int, ReactionSummary> _reactions = {};
+  ViewStatus _status = ViewStatus.loading;
   String? _error;
 
-  Future<void> _load() async {
-    setState(() {
-      _status = ViewStatus.ready;
-      _error = null;
-    });
+  @override
+  void initState() {
+    super.initState();
+    _service.revision.addListener(_onPostsChanged);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _service.revision.removeListener(_onPostsChanged);
+    super.dispose();
+  }
+
+  void _onPostsChanged() => _load(silent: true);
+
+  /// Posts of the signed-in user (the web page shows every post instead).
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _status = ViewStatus.loading;
+        _error = null;
+      });
+    }
+    try {
+      final me = await AuthSession.instance.ensureSignedIn() ? AuthSession.instance.userId : null;
+      if (me == null) throw const ApiException('Connectez-vous pour voir vos posts.');
+      final posts = await _service.getByUser(me);
+      final reactions = await _service.getReactionsFor(posts, userId: me);
+      if (!mounted) return;
+      setState(() {
+        _posts = posts;
+        _reactions = reactions;
+        _status = ViewStatus.ready;
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      if (silent && _status == ViewStatus.ready) {
+        showAppSnackBar(context, ApiException.describe(e));
+      } else {
+        setState(() {
+          _status = ViewStatus.error;
+          _error = ApiException.describe(e);
+        });
+      }
+    }
   }
 
   Future<void> _delete(Post post) async {
-    await showConfirmDialog(
+    final confirmed = await showConfirmDialog(
       context,
       title: 'Delete post',
       message: 'Are you sure you want to delete this post?',
       confirmLabel: 'Delete',
       destructive: true,
     );
+    if (!confirmed) return;
+    try {
+      await _service.delete(post.id);
+      if (mounted) showAppSnackBar(context, 'Post supprimé.');
+    } catch (e) {
+      if (mounted) showAppSnackBar(context, ApiException.describe(e));
+    }
   }
 
   @override
@@ -80,7 +133,7 @@ class _MyPostsScreenState extends State<MyPostsScreen> {
                       padding: const EdgeInsets.only(bottom: AppSpacing.lg),
                       child: PostCard(
                         post: p,
-                        reactions: const ReactionSummary(counts: {}),
+                        reactions: _reactions[p.id] ?? ReactionSummary.empty,
                         onReact: (_) {},
                         onComments: () => showCommentsSheet(context, postId: p.id),
                         onEdit: () => context.push(AppRoutes.postEdit(p.id), extra: p),

@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/network/api_client.dart';
 import '../../core/router/app_routes.dart';
+import '../../core/session/auth_session.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../models/post.dart';
+import '../../services/post_service.dart';
 import '../../widgets/common/async_state_view.dart';
 import '../../widgets/common/dialogs.dart';
 import '../../widgets/common/state_views.dart';
@@ -18,36 +21,106 @@ class PostsFeedScreen extends StatefulWidget {
 }
 
 class _PostsFeedScreenState extends State<PostsFeedScreen> {
-  // Filled by the posts / reactions API.
-  final List<Post> _posts = [];
-  final Map<int, ReactionSummary> _reactions = {};
-  ViewStatus _status = ViewStatus.ready;
+  final _service = PostService.instance;
+
+  List<Post> _posts = [];
+  Map<int, ReactionSummary> _reactions = {};
+  ViewStatus _status = ViewStatus.loading;
   String? _error;
   String _query = '';
 
-  Future<void> _load() async {
-    setState(() {
-      _status = ViewStatus.ready;
-      _error = null;
-    });
+  /// Id of the signed-in user (from the authenticated session).
+  String? get _me => AuthSession.instance.userId;
+
+  @override
+  void initState() {
+    super.initState();
+    _service.revision.addListener(_onPostsChanged);
+    _load();
   }
 
-  void _react(Post post, ReactionType type) =>
-      setState(() => _reactions[post.id] = (_reactions[post.id] ?? const ReactionSummary(counts: {})).toggle(type));
+  @override
+  void dispose() {
+    _service.revision.removeListener(_onPostsChanged);
+    super.dispose();
+  }
+
+  /// A post was created, edited or deleted on another screen.
+  void _onPostsChanged() => _load(silent: true);
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _status = ViewStatus.loading;
+        _error = null;
+      });
+    }
+    try {
+      await AuthSession.instance.ensureSignedIn();
+      final posts = await _service.getAll();
+      final reactions = await _service.getReactionsFor(posts, userId: _me);
+      if (!mounted) return;
+      setState(() {
+        _posts = posts;
+        _reactions = reactions;
+        _status = ViewStatus.ready;
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      if (silent && _status == ViewStatus.ready) {
+        showAppSnackBar(context, ApiException.describe(e));
+      } else {
+        setState(() {
+          _status = ViewStatus.error;
+          _error = ApiException.describe(e);
+        });
+      }
+    }
+  }
+
+  /// Optimistic toggle, then the counts returned by the service.
+  Future<void> _react(Post post, ReactionType type) async {
+    final me = _me;
+    if (me == null) {
+      showAppSnackBar(context, 'Connectez-vous pour réagir.');
+      return;
+    }
+    final before = _reactions[post.id] ?? ReactionSummary.empty;
+    setState(() => _reactions = {..._reactions, post.id: before.toggle(type)});
+    try {
+      final after = await _service.toggleReaction(post.id, userId: me, type: type);
+      if (mounted) setState(() => _reactions = {..._reactions, post.id: after});
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _reactions = {..._reactions, post.id: before});
+      showAppSnackBar(context, ApiException.describe(e));
+    }
+  }
 
   Future<void> _delete(Post post) async {
-    await showConfirmDialog(
+    final confirmed = await showConfirmDialog(
       context,
       title: 'Delete post',
       message: 'Are you sure you want to delete this post?',
       confirmLabel: 'Delete',
       destructive: true,
     );
+    if (!confirmed) return;
+    try {
+      await _service.delete(post.id);
+      if (mounted) showAppSnackBar(context, 'Post supprimé.');
+    } catch (e) {
+      if (mounted) showAppSnackBar(context, ApiException.describe(e));
+    }
   }
 
   List<Post> get _filtered {
     final q = _query.trim().toLowerCase();
-    return q.isEmpty ? _posts : _posts.where((p) => p.content.toLowerCase().contains(q)).toList();
+    if (q.isEmpty) return _posts;
+    return _posts
+        .where((p) => p.content.toLowerCase().contains(q) || (p.author?.displayName.toLowerCase().contains(q) ?? false))
+        .toList();
   }
 
   @override
@@ -55,6 +128,14 @@ class _PostsFeedScreenState extends State<PostsFeedScreen> {
     final posts = _filtered;
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
+        // `context` is above this Scaffold, so it resolves to the shell's
+        // Scaffold, which owns the drawer.
+        leading: IconButton(
+          tooltip: 'Menu',
+          icon: const Icon(Icons.menu_rounded),
+          onPressed: () => Scaffold.of(context).openDrawer(),
+        ),
         title: const Text('Community Posts'),
         actions: [
           TextButton.icon(
@@ -106,11 +187,12 @@ class _PostsFeedScreenState extends State<PostsFeedScreen> {
                       padding: const EdgeInsets.only(bottom: AppSpacing.lg),
                       child: PostCard(
                         post: p,
-                        reactions: _reactions[p.id] ?? const ReactionSummary(counts: {}),
+                        reactions: _reactions[p.id] ?? ReactionSummary.empty,
                         onReact: (type) => _react(p, type),
                         onComments: () => showCommentsSheet(context, postId: p.id),
-                        onEdit: () => context.push(AppRoutes.postEdit(p.id), extra: p),
-                        onDelete: () => _delete(p),
+                        // The web shows these to everyone; only the author may edit or delete.
+                        onEdit: p.isOwnedBy(_me) ? () => context.push(AppRoutes.postEdit(p.id), extra: p) : null,
+                        onDelete: p.isOwnedBy(_me) ? () => _delete(p) : null,
                       ),
                     ),
                 ],

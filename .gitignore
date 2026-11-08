@@ -39,6 +39,10 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
+# Local API settings (backend URL, test account): copy env/dev.example.json
+/env/*.json
+!/env/*.example.json
+
 # Android Studio will place build artifacts here
 /android/app/debug
 /android/app/profile

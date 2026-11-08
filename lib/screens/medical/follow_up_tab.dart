@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/network/api_client.dart';
 import '../../core/router/app_routes.dart';
+import '../../core/session/auth_session.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../models/medical.dart';
+import '../../services/medical_service.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_chip.dart';
 import '../../widgets/common/async_state_view.dart';
@@ -21,25 +24,44 @@ class FollowUpTab extends StatefulWidget {
 }
 
 class _FollowUpTabState extends State<FollowUpTab> {
-  // Filled by the users / dossiers API.
-  final List<FollowUpPatient> _patients = [];
-  ViewStatus _status = ViewStatus.ready;
+  List<FollowUpPatient> _patients = [];
+  ViewStatus _status = ViewStatus.loading;
   String? _error;
   String _query = '';
 
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  /// Patients of the platform (User-Service, role PATIENT_PROFILE).
   Future<void> _load() async {
     setState(() {
-      _status = ViewStatus.ready;
+      _status = ViewStatus.loading;
       _error = null;
     });
+    try {
+      await AuthSession.instance.ensureSignedIn();
+      final patients = await MedicalService.instance.getPatients();
+      if (!mounted) return;
+      setState(() {
+        _patients = patients;
+        _status = ViewStatus.ready;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _status = ViewStatus.error;
+        _error = ApiException.describe(e);
+      });
+    }
   }
 
   List<FollowUpPatient> get _filtered {
     final q = _query.trim().toLowerCase();
     if (q.isEmpty) return _patients;
-    return _patients
-        .where((p) => '${p.fullName} ${p.email} ${p.condition}'.toLowerCase().contains(q))
-        .toList();
+    return _patients.where((p) => '${p.fullName} ${p.email} ${p.condition}'.toLowerCase().contains(q)).toList();
   }
 
   /// Web `getPatientStageColor`: by condition.

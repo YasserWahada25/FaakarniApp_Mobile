@@ -1,45 +1,7 @@
+import '../core/network/json_parsing.dart';
+import 'user.dart';
+
 /// Medical module models (records, NeuroScan AI detection, follow-up dossiers).
-class PatientProfile {
-  const PatientProfile({
-    required this.name,
-    required this.age,
-    required this.bloodType,
-    required this.condition,
-    required this.lastVisit,
-  });
-
-  final String name;
-  final int age;
-  final String bloodType;
-  final String condition;
-  final DateTime lastVisit;
-}
-
-class Vitals {
-  const Vitals({required this.bloodPressure, required this.heartRate, required this.weight, required this.temperature});
-
-  final String bloodPressure;
-  final int heartRate;
-  final int weight;
-  final double temperature;
-}
-
-class MedicalHistoryEntry {
-  const MedicalHistoryEntry({
-    required this.date,
-    required this.type,
-    required this.doctor,
-    required this.diagnosis,
-    required this.treatment,
-  });
-
-  final DateTime date;
-  final String type;
-  final String doctor;
-  final String diagnosis;
-  final String treatment;
-}
-
 /// Mini-Mental State Examination score (out of 30).
 class MmsePoint {
   const MmsePoint(this.label, this.score);
@@ -64,6 +26,10 @@ enum DementiaStage {
   final String shortLabel;
   final String roman;
   final int number;
+
+  /// Class name returned by the AI model (`Mild_Demented`, …).
+  static DementiaStage fromKey(Object? key) =>
+      values.where((s) => s.key == key).firstOrNull ?? DementiaStage.nonDemented;
 }
 
 enum RiskLevel {
@@ -74,6 +40,21 @@ enum RiskLevel {
 
   const RiskLevel(this.label);
   final String label;
+
+  /// Risk label of the AI model (`AUCUN`, `FAIBLE`, `MODERE`, `ELEVE`, …),
+  /// falling back on the predicted stage.
+  static RiskLevel fromLabel(Object? label, DementiaStage stage) {
+    final l = (label?.toString() ?? '').toUpperCase().replaceAll('É', 'E').replaceAll('È', 'E');
+    if (l.contains('CRITI') || l.contains('SEVERE')) return RiskLevel.critical;
+    if (l.contains('ELEV') || l.contains('HAUT')) return RiskLevel.high;
+    if (l.contains('MODER')) return RiskLevel.moderate;
+    if (l.contains('FAIBLE') || l.contains('AUCUN') || l.contains('BAS')) return RiskLevel.low;
+    return switch (stage) {
+      DementiaStage.nonDemented || DementiaStage.veryMild => RiskLevel.low,
+      DementiaStage.mild => RiskLevel.moderate,
+      DementiaStage.moderate => RiskLevel.high,
+    };
+  }
 }
 
 class MriAnalysis {
@@ -87,7 +68,33 @@ class MriAnalysis {
     required this.probabilities,
     required this.date,
     this.doctorAdvice,
+    this.clinicalNotes,
   });
+
+  /// Detection-Service `AnalyseIRMResponse` or an analysis of a Dossier-Medical-Service
+  /// dossier (same field names; in a dossier [id] is the dossier-side id used to edit
+  /// or delete it).
+  factory MriAnalysis.fromJson(Map<String, dynamic> json) {
+    final stage = DementiaStage.fromKey(json['prediction']);
+    double pct(String key) => (json[key] as num?)?.toDouble() ?? 0;
+    return MriAnalysis(
+      id: (json['id'] as num).toInt(),
+      fileName: json['nomFichier']?.toString() ?? '',
+      prediction: stage,
+      confidence: (json['confidence'] as num?)?.toDouble() ?? 0,
+      riskLevel: RiskLevel.fromLabel(json['niveauRisque'], stage),
+      description: json['descriptionRisque']?.toString() ?? '',
+      probabilities: {
+        DementiaStage.nonDemented: pct('probNonDemented'),
+        DementiaStage.veryMild: pct('probVeryMildDemented'),
+        DementiaStage.mild: pct('probMildDemented'),
+        DementiaStage.moderate: pct('probModerateDemented'),
+      },
+      date: parseApiDate(json['dateAnalyse']),
+      doctorAdvice: stringOrNull(json['conseilMedecin']),
+      clinicalNotes: stringOrNull(json['notesCliniques']),
+    );
+  }
 
   final int id;
   final String fileName;
@@ -100,14 +107,16 @@ class MriAnalysis {
   final Map<DementiaStage, double> probabilities;
   final DateTime date;
   final String? doctorAdvice;
+  final String? clinicalNotes;
 
-  /// Estimated MMSE derived from the stage (used by the follow-up gauges).
+  /// Indicative MMSE (/30) derived from the stage — same values as the web
+  /// follow-up (`predictionToScore`).
   int get estimatedMmse => switch (prediction) {
-        DementiaStage.nonDemented => 28,
-        DementiaStage.veryMild => 24,
-        DementiaStage.mild => 19,
-        DementiaStage.moderate => 13,
-      };
+    DementiaStage.nonDemented => 28,
+    DementiaStage.veryMild => 22,
+    DementiaStage.mild => 16,
+    DementiaStage.moderate => 9,
+  };
 }
 
 class MedicalDossier {
@@ -118,6 +127,17 @@ class MedicalDossier {
     required this.updatedAt,
     required this.analyses,
   });
+
+  /// Dossier-Medical-Service `DossierMedicalResponse`.
+  factory MedicalDossier.fromJson(Map<String, dynamic> json) => MedicalDossier(
+    id: (json['id'] as num).toInt(),
+    patientId: json['patientId']?.toString() ?? '',
+    createdAt: parseApiDate(json['dateCreation']),
+    updatedAt: parseApiDate(json['dateDerniereMaj']),
+    analyses:
+        (json['analyses'] as List? ?? const []).whereType<Map<String, dynamic>>().map(MriAnalysis.fromJson).toList()
+          ..sort((a, b) => b.date.compareTo(a.date)),
+  );
 
   final int id;
   final String patientId;
@@ -142,6 +162,16 @@ class FollowUpPatient {
     required this.condition,
   });
 
+  /// User-Service `UserResponse` of a patient.
+  factory FollowUpPatient.fromJson(Map<String, dynamic> json) => FollowUpPatient(
+    id: json['id'].toString(),
+    nom: stringOrNull(json['nom']) ?? '',
+    prenom: stringOrNull(json['prenom']) ?? '',
+    email: stringOrNull(json['email']) ?? '',
+    numTel: stringOrNull(json['numTel']) ?? '',
+    condition: UserRole.values.where((r) => r.backendValue == json['role']).firstOrNull?.label ?? 'Patient',
+  );
+
   final String id;
   final String nom;
   final String prenom;
@@ -149,8 +179,11 @@ class FollowUpPatient {
   final String numTel;
   final String condition;
 
-  String get fullName => '$nom $prenom';
-  String get initials => '${nom[0]}${prenom[0]}'.toUpperCase();
+  String get fullName => '$prenom $nom'.trim().isEmpty ? email : '$prenom $nom'.trim();
+  String get initials {
+    final letters = [prenom, nom].where((p) => p.isNotEmpty).map((p) => p[0]).join();
+    return (letters.isEmpty ? (email.isEmpty ? '?' : email[0]) : letters).toUpperCase();
+  }
 }
 
 enum CognitiveTrend {

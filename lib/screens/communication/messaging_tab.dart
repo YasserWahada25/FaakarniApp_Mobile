@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/network/api_client.dart';
 import '../../core/router/app_routes.dart';
+import '../../core/session/auth_session.dart';
 import '../../core/theme/app_decorations.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../models/communication.dart';
+import '../../services/user_directory_service.dart';
 import '../../widgets/common/async_state_view.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/communication/communication_widgets.dart';
@@ -12,6 +15,9 @@ import '../../widgets/communication/communication_widgets.dart';
 enum _MessagingView { chat, feed }
 
 /// Web `messaging/messaging.component` (Chat / Feed).
+///
+/// Unlike the web page (fixed mock users `user1`…`user4`), contacts are the
+/// real platform users and the sender is the signed-in user.
 class MessagingTab extends StatefulWidget {
   const MessagingTab({super.key});
 
@@ -20,14 +26,21 @@ class MessagingTab extends StatefulWidget {
 }
 
 class _MessagingTabState extends State<MessagingTab> {
-  // Filled by the messaging API.
-  final List<Contact> _contacts = [];
+  List<Contact> _contacts = [];
+  // The web feed is hard-coded (no backend yet).
   final List<FeedPost> _feed = [];
-  ViewStatus _status = ViewStatus.ready;
+  ViewStatus _status = ViewStatus.loading;
   String? _error;
+  String _query = '';
 
   _MessagingView _view = _MessagingView.chat;
   final _composer = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
 
   @override
   void dispose() {
@@ -37,17 +50,42 @@ class _MessagingTabState extends State<MessagingTab> {
 
   Future<void> _load() async {
     setState(() {
-      _status = ViewStatus.ready;
+      _status = ViewStatus.loading;
       _error = null;
     });
+    try {
+      final me = await AuthSession.instance.ensureSignedIn() ? AuthSession.instance.userId : null;
+      if (me == null) throw const ApiException('Connectez-vous pour accéder à la messagerie.');
+      final users = await UserDirectoryService.instance.everyone();
+      if (!mounted) return;
+      setState(() {
+        _contacts = [
+          for (final u in users)
+            if (u.id != me) Contact(id: u.id, name: u.name, role: u.roleLabel),
+        ];
+        _status = ViewStatus.ready;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _status = ViewStatus.error;
+        _error = ApiException.describe(e);
+      });
+    }
   }
 
   void _publish() {}
 
   void _like(FeedPost post) => setState(() {
-        final i = _feed.indexOf(post);
-        if (i >= 0) _feed[i] = post.toggleLike();
-      });
+    final i = _feed.indexOf(post);
+    if (i >= 0) _feed[i] = post.toggleLike();
+  });
+
+  List<Contact> get _visibleContacts {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return _contacts;
+    return _contacts.where((c) => c.name.toLowerCase().contains(q) || c.role.toLowerCase().contains(q)).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -66,33 +104,46 @@ class _MessagingTabState extends State<MessagingTab> {
           ),
         ),
         Expanded(
-          child: RefreshIndicator(
-            onRefresh: _load,
-            child: _view == _MessagingView.chat ? _chatList() : _feedList(),
-          ),
+          child: RefreshIndicator(onRefresh: _load, child: _view == _MessagingView.chat ? _chatList() : _feedList()),
         ),
       ],
     );
   }
 
   Widget _chatList() {
+    final contacts = _visibleContacts;
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
       children: [
+        if (_status == ViewStatus.ready && _contacts.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 0, AppSpacing.gutter, AppSpacing.sm),
+            child: TextField(
+              onChanged: (v) => setState(() => _query = v),
+              textInputAction: TextInputAction.search,
+              decoration: const InputDecoration(
+                hintText: 'Rechercher un contact...',
+                prefixIcon: Icon(Icons.search_rounded),
+              ),
+            ),
+          ),
         AsyncStateView(
           status: _status,
-          isEmpty: _contacts.isEmpty,
+          isEmpty: contacts.isEmpty,
           errorMessage: _error,
           onRetry: _load,
-          empty: const EmptyStateView(
+          empty: EmptyStateView(
             icon: Icons.chat_bubble_outline_rounded,
-            title: 'Aucune conversation',
-            message: 'Vos contacts apparaîtront ici.',
+            title: _contacts.isEmpty ? 'Aucune conversation' : 'Aucun contact trouvé',
+            message: _contacts.isEmpty ? 'Vos contacts apparaîtront ici.' : 'Essayez un autre nom.',
           ),
           builder: (context) => Column(
             children: [
-              for (final c in _contacts)
-                ContactTile(contact: c, onTap: () => context.push(AppRoutes.chat(c.id), extra: c)),
+              for (final c in contacts)
+                ContactTile(
+                  contact: c,
+                  onTap: () => context.push(AppRoutes.chat(c.id), extra: c),
+                ),
             ],
           ),
         ),
@@ -112,7 +163,11 @@ class _MessagingTabState extends State<MessagingTab> {
               Expanded(
                 child: TextField(
                   controller: _composer,
-                  decoration: const InputDecoration(hintText: 'Share something...', filled: false, border: InputBorder.none),
+                  decoration: const InputDecoration(
+                    hintText: 'Share something...',
+                    filled: false,
+                    border: InputBorder.none,
+                  ),
                 ),
               ),
               FilledButton(onPressed: _publish, child: const Text('Post')),

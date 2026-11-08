@@ -82,9 +82,10 @@ void main() {
     expect(find.text('Alzheimer Care'), findsOneWidget);
     expect(find.text('Filtrer le calendrier'), findsOneWidget);
 
-    await tester.tap(find.text('Geofencing').last);
+    await tester.tap(find.text('Posts').last);
     await _settle(tester);
-    expect(find.text('Configured Zones'), findsOneWidget);
+    expect(find.text('Community Posts'), findsWidgets);
+    expect(find.text('Create Post'), findsOneWidget);
 
     await tester.tap(find.text('Education').last);
     await _settle(tester);
@@ -103,6 +104,20 @@ void main() {
     await tester.tap(find.text('Favorites').last);
     await _settle(tester);
     expect(find.text('No Favorites Yet'), findsOneWidget);
+
+    // Geofencing left the bottom bar: it opens full-screen from the drawer,
+    // with a back button.
+    await tester.tap(find.byTooltip('Menu'));
+    await _settle(tester, 1);
+    await tester.tap(find.text('GEOFENCING'));
+    await _settle(tester, 1);
+    await tester.tap(find.text('Live Tracking').last);
+    await _settle(tester);
+    expect(find.text('Configured Zones'), findsOneWidget);
+    expect(find.byType(NavigationBar), findsNothing);
+    await tester.tap(find.byType(BackButton));
+    await _settle(tester);
+    expect(find.byType(NavigationBar), findsOneWidget);
   });
 
   Future<void> pumpOnboarding(WidgetTester tester) async {

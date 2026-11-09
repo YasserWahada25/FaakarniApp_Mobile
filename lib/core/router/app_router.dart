@@ -41,10 +41,11 @@ import 'app_routes.dart';
 /// - Auth pages are standalone (web: no header/footer) and public; every other
 ///   page requires a session (web `authGuard`), and a signed-in user skips the
 ///   sign-in / sign-up pages.
-/// - The five main modules live in a [StatefulShellRoute] (bottom navigation,
-///   each tab keeps its own navigation stack).
-/// - Forms, details, the meeting room and the secondary modules (medical,
-///   posts, profile) are pushed full-screen on the root navigator.
+/// - The five main modules (home, alzheimer, posts, educational, communication)
+///   live in a [StatefulShellRoute] (bottom navigation, each tab keeps its own
+///   navigation stack).
+/// - Forms, details, the meeting room and the secondary modules (geofencing,
+///   medical, profile) are pushed full-screen on the root navigator.
 abstract final class AppRouter {
   static final GlobalKey<NavigatorState> _rootKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 
@@ -113,18 +114,16 @@ abstract final class AppRouter {
           ]),
           StatefulShellBranch(routes: [
             GoRoute(
-              path: AppRoutes.geofencing,
-              builder: (_, state) => GeofencingScreen(
-                initialTab: _tab(state),
-                role: AuthProvider.instance.user?.role ?? UserRole.careOwner,
-              ),
+              path: AppRoutes.posts,
+              builder: (_, _) => const PostsFeedScreen(),
               routes: [
-                GoRoute(path: 'zones/new', parentNavigatorKey: _rootKey, builder: (_, _) => const ZoneFormScreen()),
+                GoRoute(path: 'create', parentNavigatorKey: _rootKey, builder: (_, _) => const PostFormScreen()),
                 GoRoute(
-                  path: 'zones/edit',
+                  path: 'edit/:id',
                   parentNavigatorKey: _rootKey,
-                  builder: (_, state) => ZoneFormScreen(zone: state.extra as SafeZone?),
+                  builder: (_, state) => PostFormScreen(post: state.extra as Post?),
                 ),
+                GoRoute(path: 'my-posts', parentNavigatorKey: _rootKey, builder: (_, _) => const MyPostsScreen()),
               ],
             ),
           ]),
@@ -203,12 +202,14 @@ abstract final class AppRouter {
         ],
       ),
       GoRoute(
-        path: AppRoutes.posts,
-        builder: (_, _) => const PostsFeedScreen(),
+        path: AppRoutes.geofencing,
+        builder: (_, state) => GeofencingScreen(
+          initialTab: _tab(state),
+          role: AuthProvider.instance.user?.role ?? UserRole.careOwner,
+        ),
         routes: [
-          GoRoute(path: 'create', builder: (_, _) => const PostFormScreen()),
-          GoRoute(path: 'edit/:id', builder: (_, state) => PostFormScreen(post: state.extra as Post?)),
-          GoRoute(path: 'my-posts', builder: (_, _) => const MyPostsScreen()),
+          GoRoute(path: 'zones/new', builder: (_, _) => const ZoneFormScreen()),
+          GoRoute(path: 'zones/edit', builder: (_, state) => ZoneFormScreen(zone: state.extra as SafeZone?)),
         ],
       ),
       GoRoute(path: AppRoutes.profile, builder: (_, _) => ProfileScreen(user: AuthProvider.instance.user)),

@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import '../core/config/api_config.dart';
 
@@ -14,6 +16,13 @@ class ApiException implements Exception {
 
   /// HTTP status, or null when the server could not be reached.
   final int? statusCode;
+
+  /// User-facing message for any error caught around an API call.
+  static String describe(Object error) {
+    if (error is ApiException) return error.message;
+    debugPrint('Unexpected API error: $error');
+    return 'Réponse inattendue du serveur.';
+  }
 
   @override
   String toString() => message;
@@ -49,7 +58,8 @@ class ApiClient {
   Future<dynamic> patch(String path, {Object? body, bool auth = true}) =>
       _send('PATCH', ApiConfig.uri(path), body: body, auth: auth);
 
-  Future<dynamic> delete(String path, {bool auth = true}) => _send('DELETE', ApiConfig.uri(path), auth: auth);
+  Future<dynamic> delete(String path, {Map<String, String>? query, bool auth = true}) =>
+      _send('DELETE', ApiConfig.uri(path, query), auth: auth);
 
   /// Multipart upload of a single file. [timeout] defaults to [ApiConfig.timeout].
   Future<dynamic> postFile(
@@ -57,23 +67,51 @@ class ApiClient {
     required String field,
     required List<int> bytes,
     required String filename,
+    MediaType? contentType,
     Map<String, String>? query,
     Duration? timeout,
   }) =>
       _dispatch(
         (token) => http.MultipartRequest('POST', ApiConfig.uri(path, query))
           ..headers.addAll(_headers(token))
-          ..files.add(http.MultipartFile.fromBytes(field, bytes, filename: filename)),
+          ..files.add(http.MultipartFile.fromBytes(field, bytes, filename: filename, contentType: contentType)),
         auth: true,
         timeout: timeout,
       );
 
+  /// Multipart upload of an image: group-service rejects any part not typed
+  /// `image/*`, so unknown extensions are sent as JPEG (what `image_picker` produces).
+  Future<dynamic> upload(
+    String path, {
+    required String field,
+    required List<int> bytes,
+    required String filename,
+    Map<String, String>? query,
+    Duration? timeout,
+  }) =>
+      postFile(
+        path,
+        field: field,
+        bytes: bytes,
+        filename: filename,
+        contentType: _imageType(filename),
+        query: query,
+        timeout: timeout,
+      );
+
+  /// A [String] body is sent as `text/plain` (e.g. chat `PUT /api/messages/{id}`),
+  /// anything else as JSON.
   Future<dynamic> _send(String method, Uri uri, {Object? body, required bool auth}) => _dispatch(
         (token) {
-          final request = http.Request(method, uri)
-            ..headers.addAll(_headers(token))
-            ..headers[HttpHeaders.contentTypeHeader] = 'application/json; charset=utf-8';
-          if (body != null) request.body = jsonEncode(body);
+          final request = http.Request(method, uri)..headers.addAll(_headers(token));
+          if (body is String) {
+            request
+              ..headers[HttpHeaders.contentTypeHeader] = 'text/plain; charset=utf-8'
+              ..body = body;
+          } else {
+            request.headers[HttpHeaders.contentTypeHeader] = 'application/json; charset=utf-8';
+            if (body != null) request.body = jsonEncode(body);
+          }
           return request;
         },
         auth: auth,
@@ -121,11 +159,26 @@ class ApiClient {
 
     final decoded = res.bodyBytes.isEmpty ? null : _decode(utf8.decode(res.bodyBytes));
     if (res.statusCode >= 200 && res.statusCode < 300) return decoded;
-    final fallback = res.statusCode == 503
-        ? 'Service momentanément indisponible (503). Réessayez dans un instant.'
-        : 'Erreur serveur (${res.statusCode}).';
-    throw ApiException(_errorMessage(decoded) ?? fallback, statusCode: res.statusCode);
+    debugPrint('API ${res.request?.method} ${res.request?.url} → HTTP ${res.statusCode}');
+    throw ApiException(_errorMessage(decoded) ?? _statusMessage(res.statusCode), statusCode: res.statusCode);
   }
+
+  static String _statusMessage(int status) => switch (status) {
+        400 => 'Requête invalide.',
+        401 => 'Session expirée. Reconnectez-vous.',
+        403 => 'Accès refusé.',
+        404 => 'Élément introuvable.',
+        502 || 503 || 504 => 'Service momentanément indisponible ($status). Réessayez dans un instant.',
+        _ => 'Erreur serveur ($status).',
+      };
+
+  static MediaType _imageType(String filename) => switch (filename.split('.').last.toLowerCase()) {
+        'png' => MediaType('image', 'png'),
+        'gif' => MediaType('image', 'gif'),
+        'webp' => MediaType('image', 'webp'),
+        'heic' => MediaType('image', 'heic'),
+        _ => MediaType('image', 'jpeg'),
+      };
 
   static dynamic _decode(String text) {
     try {

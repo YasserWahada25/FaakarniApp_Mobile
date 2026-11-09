@@ -8,13 +8,14 @@ import '../../models/communication.dart';
 import '../common/app_card.dart';
 import '../common/app_chip.dart';
 import '../common/initials_avatar.dart';
+import '../common/network_picture.dart';
 
 extension PresenceStyle on PresenceStatus {
   Color get color => switch (this) {
-        PresenceStatus.online => ModuleColors.online,
-        PresenceStatus.away => AppColors.warning,
-        PresenceStatus.offline => AppColors.border,
-      };
+    PresenceStatus.online => ModuleColors.online,
+    PresenceStatus.away => AppColors.warning,
+    PresenceStatus.offline => AppColors.border,
+  };
 }
 
 extension GroupTypeStyle on GroupType {
@@ -25,10 +26,10 @@ extension GroupTypeStyle on GroupType {
 
 extension MemberRoleStyle on MemberRole {
   (Color, Color, IconData) get style => switch (this) {
-        MemberRole.admin => (SessionColors.pendingBg, SessionColors.pendingFg, Icons.workspace_premium_outlined),
-        MemberRole.moderator => (SessionColors.finishedBg, SessionColors.finishedFg, Icons.shield_outlined),
-        MemberRole.member => (AppColors.bgMain, AppColors.primaryDark, Icons.person_outline_rounded),
-      };
+    MemberRole.admin => (SessionColors.pendingBg, SessionColors.pendingFg, Icons.workspace_premium_outlined),
+    MemberRole.moderator => (SessionColors.finishedBg, SessionColors.finishedFg, Icons.shield_outlined),
+    MemberRole.member => (AppColors.bgMain, AppColors.primaryDark, Icons.person_outline_rounded),
+  };
 }
 
 /// Contact row of the messaging list.
@@ -44,16 +45,14 @@ class ContactTile extends StatelessWidget {
     return ListTile(
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xxs),
-      leading: InitialsAvatar(initials: contact.initials, statusColor: contact.status.color),
+      leading: InitialsAvatar(initials: contact.initials, statusColor: contact.status?.color),
       title: Text(contact.name),
-      subtitle: Text(
-        contact.lastMessage ?? contact.role,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
+      subtitle: Text(contact.lastMessage ?? contact.role, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: contact.unreadCount > 0
           ? Badge.count(count: contact.unreadCount, backgroundColor: AppColors.primary)
-          : Text(contact.status.label, style: text.labelSmall?.copyWith(color: contact.status.color)),
+          : contact.status != null
+          ? Text(contact.status!.label, style: text.labelSmall?.copyWith(color: contact.status!.color))
+          : const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary),
     );
   }
 }
@@ -164,15 +163,20 @@ class FeedPostCard extends StatelessWidget {
   }
 }
 
-/// Group cover: gradient from the palette, or the web "Pas d'image" placeholder.
+/// Group cover: uploaded image, gradient from the palette, or the web
+/// "Pas d'image" placeholder.
 class GroupCover extends StatelessWidget {
-  const GroupCover({super.key, required this.coverIndex, this.height = AppSizes.thumbHeight});
+  const GroupCover({super.key, required this.coverIndex, this.imageUrl, this.height = AppSizes.thumbHeight});
 
   final int coverIndex;
+
+  /// Absolute URL of the uploaded cover; wins over [coverIndex].
+  final String? imageUrl;
   final double height;
 
   @override
   Widget build(BuildContext context) {
+    if (imageUrl != null) return NetworkPicture(url: imageUrl!, height: height, width: double.infinity);
     if (coverIndex < 0) {
       return Container(
         height: height,
@@ -229,7 +233,7 @@ class GroupCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            GroupCover(coverIndex: group.coverIndex, height: AppSizes.coverSm),
+            GroupCover(coverIndex: group.coverIndex, imageUrl: group.coverUrl, height: AppSizes.coverSm),
             Padding(
               padding: const EdgeInsets.all(AppSpacing.md),
               child: Column(
@@ -279,7 +283,11 @@ class GroupCard extends StatelessWidget {
       return Wrap(
         spacing: AppSpacing.sm,
         children: [
-          TextButton.icon(onPressed: onOpen, icon: const Icon(Icons.visibility_outlined), label: const Text('Voir Détails')),
+          TextButton.icon(
+            onPressed: onOpen,
+            icon: const Icon(Icons.visibility_outlined),
+            label: const Text('Voir Détails'),
+          ),
           if (isCreator)
             TextButton.icon(onPressed: onEdit, icon: const Icon(Icons.edit_outlined), label: const Text('Modifier'))
           else

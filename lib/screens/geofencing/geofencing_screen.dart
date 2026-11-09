@@ -20,6 +20,7 @@ class GeofencingScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return ModuleTabScaffold(
       title: 'Geofencing',
+      showDrawerButton: false,
       initialIndex: ModuleTabs.indexOf(ModuleTabs.geofencing, initialTab),
       tabs: [
         ModuleTab(label: 'Live Tracking', icon: Icons.share_location_outlined, body: LiveTrackingTab(role: role)),

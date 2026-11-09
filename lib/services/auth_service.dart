@@ -15,10 +15,10 @@ class AuthService {
 
   final ApiClient _api;
 
-  Future<AuthSession> login(String email, String password) async {
+  Future<UserSession> login(String email, String password) async {
     try {
       final raw = await _api.post(ApiEndpoints.login, body: {'email': email, 'password': password}, auth: false);
-      return AuthSession.fromJson(_map(raw));
+      return UserSession.fromJson(_map(raw));
     } on ApiException catch (e) {
       throw _rejected(e, 'Email ou mot de passe incorrect.');
     }
@@ -37,9 +37,9 @@ class AuthService {
   }
 
   /// Rotates the refresh token (same session) and issues a new access token.
-  Future<AuthSession> refresh(String refreshToken) async {
+  Future<UserSession> refresh(String refreshToken) async {
     final raw = await _api.post(ApiEndpoints.refresh, body: {'refreshToken': refreshToken}, auth: false);
-    return AuthSession.fromJson(_map(raw));
+    return UserSession.fromJson(_map(raw));
   }
 
   /// Revokes the server session of [refreshToken].

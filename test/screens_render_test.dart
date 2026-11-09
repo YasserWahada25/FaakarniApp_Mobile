@@ -123,8 +123,9 @@ void main() {
     ));
     await _settle(tester);
 
-    await tester.enterText(find.byType(TextFormField).at(0), 'Ahmed Fares');
-    await tester.enterText(find.byType(TextFormField).at(2), '72');
+    // The patient is now picked from the platform's patients (dropdown);
+    // the age is the only text field of step 1.
+    await tester.enterText(find.byType(TextFormField).at(0), '72');
     await _settle(tester, 3);
     expect(find.text('Indice de risque global'), findsOneWidget);
     expect(find.text('13'), findsOneWidget); // age risk for 72 years

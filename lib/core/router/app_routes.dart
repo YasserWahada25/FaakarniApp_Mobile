@@ -12,13 +12,13 @@ abstract final class AppRoutes {
   // Bottom navigation branches
   static const String home = '/home';
   static const String alzheimer = '/alzheimer';
-  static const String geofencing = '/geofencing';
+  static const String posts = '/posts';
   static const String educational = '/educational';
   static const String communication = '/communication';
 
   // Full-screen modules
+  static const String geofencing = '/geofencing';
   static const String medical = '/medical';
-  static const String posts = '/posts';
   static const String profile = '/profile';
 
   // Alzheimer

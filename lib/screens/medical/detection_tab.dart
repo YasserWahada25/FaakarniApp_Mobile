@@ -1,15 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
+import '../../core/network/api_client.dart';
+import '../../core/router/app_routes.dart';
+import '../../core/session/auth_session.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_decorations.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/utils/clinical_scoring.dart';
 import '../../core/utils/formatters.dart';
 import '../../models/medical.dart';
+import '../../models/user.dart';
+import '../../services/medical_service.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_chip.dart';
 import '../../widgets/common/charts.dart';
+import '../../widgets/common/dialogs.dart';
 import '../../widgets/common/form_fields.dart';
 import '../../widgets/common/section_header.dart';
 import '../../widgets/common/state_views.dart';
@@ -47,8 +55,11 @@ class _DetectionTabState extends State<DetectionTab> {
     'tc': Icons.personal_injury_outlined,
   };
 
-  final _name = TextEditingController();
-  final _patientId = TextEditingController();
+  /// Patients of the platform; the analysed patient is picked, not typed (web parity).
+  List<FollowUpPatient> _patients = [];
+  bool _patientsLoading = true;
+  String? _patientsError;
+  String? _patientId;
   final _age = TextEditingController();
   String? _gender;
 
@@ -67,6 +78,8 @@ class _DetectionTabState extends State<DetectionTab> {
 
   // Selected MRI file and AI result, filled by the picker / detection API.
   String? _imageName;
+  Uint8List? _imageBytes;
+  bool _analyzing = false;
   MriAnalysis? _analysis;
 
   int? get _ageValue => int.tryParse(_age.text);
@@ -77,36 +90,118 @@ class _DetectionTabState extends State<DetectionTab> {
       ClinicalScoring.questionnaireScore(symptoms: _symptoms, antecedents: _antecedents, duration: _duration);
 
   Set<int> get _completed => {
-        if (_name.text.trim().isNotEmpty && (_ageValue ?? 0) > 0) 0,
-        if (_qScore > 0) 1,
-        if (_analysis != null) 2,
-      };
+    if (_patientId != null && (_ageValue ?? 0) > 0) 0,
+    if (_qScore > 0) 1,
+    if (_analysis != null) 2,
+  };
 
   @override
   void dispose() {
     _scroll.dispose();
-    _name.dispose();
-    _patientId.dispose();
     _age.dispose();
     super.dispose();
   }
 
-  void _runAnalysis() {}
+  FollowUpPatient? get _patient => _patients.where((p) => p.id == _patientId).firstOrNull;
+  String get _patientName => _patient?.fullName ?? '';
 
-  void _exportPdf() {}
+  @override
+  void initState() {
+    super.initState();
+    _loadPatients();
+  }
+
+  Future<void> _loadPatients() async {
+    setState(() {
+      _patientsLoading = true;
+      _patientsError = null;
+    });
+    try {
+      await AuthSession.instance.ensureSignedIn();
+      final patients = await MedicalService.instance.getPatients();
+      if (!mounted) return;
+      final me = AuthSession.instance.user;
+      setState(() {
+        _patients = patients;
+        _patientsLoading = false;
+        // A signed-in patient analyses their own MRI: preselected.
+        if (_patientId == null && me?.role == UserRole.patient && patients.any((p) => p.id == me!.id)) {
+          _patientId = me!.id;
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _patientsLoading = false;
+        _patientsError = ApiException.describe(e);
+      });
+    }
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      final file = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1024, imageQuality: 90);
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      if (!mounted) return;
+      setState(() {
+        _imageBytes = bytes;
+        // The AI service only accepts PNG / JPG / JPEG names.
+        final ext = file.name.split('.').last.toLowerCase();
+        _imageName = const {'png', 'jpg', 'jpeg'}.contains(ext) ? file.name : '${file.name.split('.').first}.jpg';
+        _analysis = null;
+      });
+    } catch (e) {
+      if (mounted) showAppSnackBar(context, "Impossible d'ouvrir la galerie.");
+    }
+  }
+
+  /// Step 3: the MRI goes to the AI model (Detection service → Flask EfficientNetB3);
+  /// the result is also stored in the patient's dossier.
+  Future<void> _runAnalysis() async {
+    final patientId = _patientId;
+    final bytes = _imageBytes;
+    if (patientId == null) {
+      showAppSnackBar(context, 'Sélectionnez un patient (étape 1).');
+      _goTo(0);
+      return;
+    }
+    if (bytes == null || _analyzing) return;
+    setState(() => _analyzing = true);
+    try {
+      final analysis = await MedicalService.instance.analyseMri(
+        patientId: patientId,
+        bytes: bytes,
+        filename: _imageName ?? 'irm.jpg',
+      );
+      if (!mounted) return;
+      setState(() => _analysis = analysis);
+      showAppSnackBar(context, 'Analyse ajoutée au dossier de $_patientName.');
+    } catch (e) {
+      if (mounted) showAppSnackBar(context, 'Analyse échouée : ${ApiException.describe(e)}');
+    } finally {
+      if (mounted) setState(() => _analyzing = false);
+    }
+  }
+
+  void _openDossier() {
+    final patient = _patient;
+    if (patient == null) return;
+    context.push(AppRoutes.patientDossier(patient.id), extra: patient);
+  }
 
   void _reset() => setState(() {
-        _name.clear();
-        _patientId.clear();
-        _age.clear();
-        _gender = null;
-        _symptoms.clear();
-        _antecedents.clear();
-        _duration = null;
-        _imageName = null;
-        _analysis = null;
-        _step = 0;
-      });
+    _patientId = null;
+    _age.clear();
+    _gender = null;
+    _symptoms.clear();
+    _antecedents.clear();
+    _duration = null;
+    _imageName = null;
+    _imageBytes = null;
+    _analysis = null;
+    _step = 0;
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -117,12 +212,7 @@ class _DetectionTabState extends State<DetectionTab> {
       children: [
         const _NeuroHeader(),
         const SizedBox(height: AppSpacing.lg),
-        WizardStepper(
-          steps: _steps,
-          current: _step,
-          completed: _completed,
-          onStepTap: _goTo,
-        ),
+        WizardStepper(steps: _steps, current: _step, completed: _completed, onStepTap: _goTo),
         const SizedBox(height: AppSpacing.lg),
         AnimatedSwitcher(
           duration: AppDurations.normal,
@@ -136,16 +226,19 @@ class _DetectionTabState extends State<DetectionTab> {
           ),
         ),
         const SizedBox(height: AppSpacing.xl),
-        if (_analysis == null) _summary() else _Report(
-          analysis: _analysis!,
-          patientName: _name.text,
-          age: _ageValue,
-          questionnaireScore: _qScore,
-          ageRisk: _ageRisk,
-          globalRisk: _globalRisk,
-          onReset: _reset,
-          onExport: _exportPdf,
-        ),
+        if (_analysis == null)
+          _summary()
+        else
+          _Report(
+            analysis: _analysis!,
+            patientName: _patientName,
+            age: _ageValue,
+            questionnaireScore: _qScore,
+            ageRisk: _ageRisk,
+            globalRisk: _globalRisk,
+            onReset: _reset,
+            onExport: _openDossier,
+          ),
       ],
     );
   }
@@ -159,8 +252,15 @@ class _DetectionTabState extends State<DetectionTab> {
       title: 'Dossier patient',
       subtitle: 'Renseignez les informations du patient',
       children: [
-        AppTextField(label: 'Nom complet', controller: _name, hint: 'Ex : Ahmed Fares', onChanged: (_) => setState(() {})),
-        AppTextField(label: 'ID Patient', controller: _patientId, hint: 'Ex : 6849ab3f1c2d4e5f6789abcd'),
+        AppDropdownField<String>(
+          label: 'Patient',
+          value: _patientId,
+          hint: _patientsLoading ? 'Chargement des patients…' : 'Sélectionner un patient',
+          items: [for (final p in _patients) p.id],
+          itemLabel: (id) => _patients.firstWhere((p) => p.id == id).fullName,
+          onChanged: (id) => setState(() => _patientId = id),
+        ),
+        if (_patientsError != null) FeedbackBanner(message: _patientsError!, onClose: _loadPatients),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -170,7 +270,11 @@ class _DetectionTabState extends State<DetectionTab> {
                 value: _gender,
                 hint: '—',
                 items: const ['F', 'M', 'A'],
-                itemLabel: (g) => switch (g) { 'F' => 'Féminin', 'M' => 'Masculin', _ => 'Autre' },
+                itemLabel: (g) => switch (g) {
+                  'F' => 'Féminin',
+                  'M' => 'Masculin',
+                  _ => 'Autre',
+                },
                 onChanged: (g) => setState(() => _gender = g),
               ),
             ),
@@ -196,7 +300,12 @@ class _DetectionTabState extends State<DetectionTab> {
                 Row(
                   children: [
                     Expanded(child: Text('Indice de risque global', style: text.titleSmall)),
-                    const AppChip(label: 'IA × Âge', background: AppColors.white, foreground: MedColors.neuroDeep, dense: true),
+                    const AppChip(
+                      label: 'IA × Âge',
+                      background: AppColors.white,
+                      foreground: MedColors.neuroDeep,
+                      dense: true,
+                    ),
                   ],
                 ),
                 const SizedBox(height: AppSpacing.sm),
@@ -214,7 +323,10 @@ class _DetectionTabState extends State<DetectionTab> {
             ),
           )
         else
-          const FeedbackBanner(kind: BannerKind.info, message: "Saisissez l'âge pour calculer l'indice de risque global"),
+          const FeedbackBanner(
+            kind: BannerKind.info,
+            message: "Saisissez l'âge pour calculer l'indice de risque global",
+          ),
         const SizedBox(height: AppSpacing.lg),
         _StepNav(onNext: () => _goTo(1), nextLabel: 'Suivant — Questionnaire'),
       ],
@@ -227,18 +339,18 @@ class _DetectionTabState extends State<DetectionTab> {
     final score = _qScore;
     final band = ClinicalScoring.questionnaireBand(score);
     Widget checks(List<ClinicalItem> items, Set<String> selected) => Wrap(
-          spacing: AppSpacing.sm,
-          runSpacing: AppSpacing.sm,
-          children: [
-            for (final item in items)
-              FilterChip(
-                avatar: Icon(_itemIcons[item.key], size: AppSizes.iconSm),
-                label: Text(item.label),
-                selected: selected.contains(item.key),
-                onSelected: (on) => setState(() => on ? selected.add(item.key) : selected.remove(item.key)),
-              ),
-          ],
-        );
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
+      children: [
+        for (final item in items)
+          FilterChip(
+            avatar: Icon(_itemIcons[item.key], size: AppSizes.iconSm),
+            label: Text(item.label),
+            selected: selected.contains(item.key),
+            onSelected: (on) => setState(() => on ? selected.add(item.key) : selected.remove(item.key)),
+          ),
+      ],
+    );
     return _StepPanel(
       icon: Icons.checklist_rounded,
       title: 'Questionnaire clinique',
@@ -276,7 +388,10 @@ class _DetectionTabState extends State<DetectionTab> {
               children: [
                 Column(
                   children: [
-                    Text(score.toStringAsFixed(1), style: text.headlineMedium?.copyWith(color: band.questionnaireColor)),
+                    Text(
+                      score.toStringAsFixed(1),
+                      style: text.headlineMedium?.copyWith(color: band.questionnaireColor),
+                    ),
                     Text('/10 · Score clinique', style: text.labelSmall),
                   ],
                 ),
@@ -298,11 +413,7 @@ class _DetectionTabState extends State<DetectionTab> {
           ),
         ],
         const SizedBox(height: AppSpacing.lg),
-        _StepNav(
-          onPrevious: () => _goTo(0),
-          onNext: () => _goTo(2),
-          nextLabel: 'Suivant — Imagerie IRM',
-        ),
+        _StepNav(onPrevious: () => _goTo(0), onNext: () => _goTo(2), nextLabel: 'Suivant — Imagerie IRM'),
       ],
     );
   }
@@ -320,29 +431,41 @@ class _DetectionTabState extends State<DetectionTab> {
           title: _imageName ?? 'Sélectionner une image IRM',
           subtitle: 'Formats acceptés : PNG, JPG, JPEG',
           height: AppSizes.uploadHeight,
+          onTap: _analyzing ? null : _pickImage,
         ),
         const SizedBox(height: AppSpacing.md),
         AspectRatio(
           aspectRatio: 1,
           child: Container(
             decoration: const BoxDecoration(color: MedColors.scanBg, borderRadius: AppRadius.lgAll),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.psychology_alt_outlined, size: AppSizes.iconXl * 1.5, color: MedColors.scanLine),
-                const SizedBox(height: AppSpacing.sm),
-                Text('Aucune image IRM chargée', style: text.bodyMedium?.copyWith(color: MedColors.neuroPale)),
-                Text('Formats acceptés : PNG, JPG, JPEG', style: text.bodySmall?.copyWith(color: MedColors.scanLine)),
-              ],
-            ),
+            clipBehavior: Clip.antiAlias,
+            child: _imageBytes != null
+                ? InteractiveViewer(maxScale: 5, child: Image.memory(_imageBytes!, fit: BoxFit.contain))
+                : Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.psychology_alt_outlined, size: AppSizes.iconXl * 1.5, color: MedColors.scanLine),
+                      const SizedBox(height: AppSpacing.sm),
+                      Text('Aucune image IRM chargée', style: text.bodyMedium?.copyWith(color: MedColors.neuroPale)),
+                      Text(
+                        'Formats acceptés : PNG, JPG, JPEG',
+                        style: text.bodySmall?.copyWith(color: MedColors.scanLine),
+                      ),
+                    ],
+                  ),
           ),
         ),
         const SizedBox(height: AppSpacing.md),
         FilledButton.icon(
           style: FilledButton.styleFrom(backgroundColor: MedColors.neuro),
-          onPressed: _imageName == null ? null : _runAnalysis,
-          icon: const Icon(Icons.auto_awesome_rounded),
-          label: const Text('Analyser'),
+          onPressed: _imageBytes == null || _analyzing ? null : _runAnalysis,
+          icon: _analyzing
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.white),
+                )
+              : const Icon(Icons.auto_awesome_rounded),
+          label: Text(_analyzing ? 'Analyse IA en cours…' : 'Analyser'),
         ),
         const SizedBox(height: AppSpacing.lg),
         _StepNav(onPrevious: () => _goTo(1)),
@@ -377,7 +500,7 @@ class _DetectionTabState extends State<DetectionTab> {
               ),
               title: Text(_steps[i].$1),
               trailing: switch (i) {
-                0 when _name.text.isNotEmpty => Text(_name.text, style: text.bodySmall),
+                0 when _patientName.isNotEmpty => Text(_patientName, style: text.bodySmall),
                 1 when _qScore > 0 => Text('Score : ${_qScore.toStringAsFixed(1)}/10', style: text.bodySmall),
                 _ => null,
               },
@@ -408,10 +531,18 @@ class _NeuroHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text.rich(
-                TextSpan(children: [
-                  TextSpan(text: 'NeuroScan ', style: text.titleLarge?.copyWith(color: MedColors.ink)),
-                  TextSpan(text: 'AI', style: text.titleLarge?.copyWith(color: MedColors.neuroPink)),
-                ]),
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: 'NeuroScan ',
+                      style: text.titleLarge?.copyWith(color: MedColors.ink),
+                    ),
+                    TextSpan(
+                      text: 'AI',
+                      style: text.titleLarge?.copyWith(color: MedColors.neuroPink),
+                    ),
+                  ],
+                ),
               ),
               Text("Détection assistée par IA · Maladie d'Alzheimer · EfficientNetB3", style: text.bodySmall),
             ],
@@ -499,7 +630,10 @@ class _RiskBar extends StatelessWidget {
       child: Row(
         children: [
           Expanded(flex: 5, child: Text(label, style: text.bodySmall)),
-          Expanded(flex: 4, child: ProgressTrack(value: (value ?? 0) / 100, color: color, trackColor: AppColors.white)),
+          Expanded(
+            flex: 4,
+            child: ProgressTrack(value: (value ?? 0) / 100, color: color, trackColor: AppColors.white),
+          ),
           SizedBox(
             width: AppSizes.valueColumn,
             child: Text(value == null ? '—' : '$value%', textAlign: TextAlign.end, style: text.labelMedium),
@@ -549,14 +683,17 @@ class _Report extends StatelessWidget {
         ),
         if (questionnaireScore > 0) ...[
           const SizedBox(height: AppSpacing.sm),
-          Builder(builder: (context) {
-            final qBand = ClinicalScoring.questionnaireBand(questionnaireScore);
-            return FeedbackBanner(
-              kind: BannerKind.info,
-              message: 'Score clinique pré-analyse : ${questionnaireScore.toStringAsFixed(1)}/10 — '
-                  '${ClinicalScoring.questionnaireLabel(qBand)}',
-            );
-          }),
+          Builder(
+            builder: (context) {
+              final qBand = ClinicalScoring.questionnaireBand(questionnaireScore);
+              return FeedbackBanner(
+                kind: BannerKind.info,
+                message:
+                    'Score clinique pré-analyse : ${questionnaireScore.toStringAsFixed(1)}/10 — '
+                    '${ClinicalScoring.questionnaireLabel(qBand)}',
+              );
+            },
+          ),
         ],
         const SizedBox(height: AppSpacing.md),
         AppCard(
@@ -578,7 +715,12 @@ class _Report extends StatelessWidget {
               ),
               Column(
                 children: [
-                  AppChip(label: analysis.riskLevel.label, background: stage.riskColor, foreground: AppColors.white, dense: true),
+                  AppChip(
+                    label: analysis.riskLevel.label,
+                    background: stage.riskColor,
+                    foreground: AppColors.white,
+                    dense: true,
+                  ),
                   const SizedBox(height: AppSpacing.xs),
                   Text('${analysis.confidence.toStringAsFixed(1)}%', style: text.labelMedium),
                 ],
@@ -617,7 +759,11 @@ class _Report extends StatelessWidget {
               const SizedBox(height: AppSpacing.sm),
               ProgressTrack(value: analysis.confidence / 100, color: stage.riskColor, trackColor: MedColors.neuroBg),
               const SizedBox(height: AppSpacing.lg),
-              const SectionHeader(title: 'Distribution des probabilités', icon: Icons.bar_chart_rounded, color: MedColors.neuroDeep),
+              const SectionHeader(
+                title: 'Distribution des probabilités',
+                icon: Icons.bar_chart_rounded,
+                color: MedColors.neuroDeep,
+              ),
               ProbabilityList(analysis: analysis),
             ],
           ),
@@ -625,7 +771,8 @@ class _Report extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
         const FeedbackBanner(
           kind: BannerKind.info,
-          message: 'Ce rapport est produit à titre indicatif uniquement. Tout diagnostic doit être confirmé par un '
+          message:
+              'Ce rapport est produit à titre indicatif uniquement. Tout diagnostic doit être confirmé par un '
               'médecin spécialiste qualifié.',
         ),
         const SizedBox(height: AppSpacing.lg),
@@ -643,8 +790,8 @@ class _Report extends StatelessWidget {
               child: FilledButton.icon(
                 style: FilledButton.styleFrom(backgroundColor: MedColors.neuro),
                 onPressed: onExport,
-                icon: const Icon(Icons.picture_as_pdf_outlined),
-                label: const Text('Export PDF'),
+                icon: const Icon(Icons.folder_open_outlined),
+                label: const Text('Voir le dossier'),
               ),
             ),
           ],

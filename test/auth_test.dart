@@ -56,11 +56,11 @@ void main() {
     });
 
     test('session reads the access token expiry', () {
-      final fresh = AuthSession(accessToken: _jwt(const Duration(minutes: 15)), refreshToken: 'r', user: AppUser.fromJson(_userJson));
-      final stale = AuthSession(accessToken: _jwt(const Duration(seconds: 10)), refreshToken: 'r', user: fresh.user);
+      final fresh = UserSession(accessToken: _jwt(const Duration(minutes: 15)), refreshToken: 'r', user: AppUser.fromJson(_userJson));
+      final stale = UserSession(accessToken: _jwt(const Duration(seconds: 10)), refreshToken: 'r', user: fresh.user);
       expect(fresh.accessTokenExpired(), isFalse);
       expect(stale.accessTokenExpired(), isTrue);
-      expect(AuthSession(accessToken: 'not-a-jwt', refreshToken: 'r', user: fresh.user).accessTokenExpired(), isTrue);
+      expect(UserSession(accessToken: 'not-a-jwt', refreshToken: 'r', user: fresh.user).accessTokenExpired(), isTrue);
     });
   });
 
@@ -97,7 +97,7 @@ void main() {
 
     test('an expired access token is renewed before the request', () async {
       final fresh = _jwt(const Duration(minutes: 15));
-      auth.debugSetSession(AuthSession(accessToken: _jwt(Duration.zero), refreshToken: 'r1', user: AppUser.fromJson(_userJson)));
+      auth.debugSetSession(UserSession(accessToken: _jwt(Duration.zero), refreshToken: 'r1', user: AppUser.fromJson(_userJson)));
       handler = (req) => req.url.path == '/auth/refresh'
           ? _json({'accessToken': fresh, 'refreshToken': 'r2', 'user': _userJson})
           : _json(<Object>[]);
@@ -111,7 +111,7 @@ void main() {
     test('a 401 renews the session once and retries', () async {
       final fresh = _jwt(const Duration(minutes: 15));
       auth.debugSetSession(
-        AuthSession(accessToken: _jwt(const Duration(minutes: 10)), refreshToken: 'r1', user: AppUser.fromJson(_userJson)),
+        UserSession(accessToken: _jwt(const Duration(minutes: 10)), refreshToken: 'r1', user: AppUser.fromJson(_userJson)),
       );
       var denied = false;
       handler = (req) {
@@ -130,7 +130,7 @@ void main() {
     });
 
     test('a rejected refresh token signs the user out', () async {
-      auth.debugSetSession(AuthSession(accessToken: _jwt(Duration.zero), refreshToken: 'r1', user: AppUser.fromJson(_userJson)));
+      auth.debugSetSession(UserSession(accessToken: _jwt(Duration.zero), refreshToken: 'r1', user: AppUser.fromJson(_userJson)));
       handler = (req) => req.url.path == '/auth/refresh'
           ? _json({'timestamp': 't', 'status': 500, 'error': 'Internal Server Error', 'path': '/auth/refresh'}, 500)
           : _json(<Object>[]);
@@ -142,7 +142,7 @@ void main() {
 
     test('a private Codespaces port is reported, without renewing the session', () async {
       auth.debugSetSession(
-        AuthSession(accessToken: _jwt(const Duration(minutes: 15)), refreshToken: 'r1', user: AppUser.fromJson(_userJson)),
+        UserSession(accessToken: _jwt(const Duration(minutes: 15)), refreshToken: 'r1', user: AppUser.fromJson(_userJson)),
       );
       handler = (_) => http.Response('', 401, headers: {'www-authenticate': 'tunnel'});
       await expectLater(
@@ -155,7 +155,7 @@ void main() {
 
     test('sign-out revokes the server session', () async {
       auth.debugSetSession(
-        AuthSession(accessToken: _jwt(const Duration(minutes: 15)), refreshToken: 'r1', user: AppUser.fromJson(_userJson)),
+        UserSession(accessToken: _jwt(const Duration(minutes: 15)), refreshToken: 'r1', user: AppUser.fromJson(_userJson)),
       );
       handler = (_) => http.Response('', 204);
       await auth.signOut();

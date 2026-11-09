@@ -31,7 +31,7 @@ class AuthProvider extends ChangeNotifier {
   final AuthService _service;
   final FlutterSecureStorage _storage;
 
-  AuthSession? _session;
+  UserSession? _session;
   bool _remember = false;
   Future<bool>? _renewing;
 
@@ -44,7 +44,7 @@ class AuthProvider extends ChangeNotifier {
     try {
       final raw = await _storage.read(key: _storageKey);
       if (raw == null) return;
-      final session = AuthSession.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+      final session = UserSession.fromJson(jsonDecode(raw) as Map<String, dynamic>);
       if (session.refreshToken.isEmpty || session.user.id.isEmpty) return;
       _session = session;
       _remember = true;
@@ -116,7 +116,7 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> _setSession(AuthSession? session) async {
+  Future<void> _setSession(UserSession? session) async {
     _session = session;
     notifyListeners();
     if (session == null) {
@@ -141,7 +141,7 @@ class AuthProvider extends ChangeNotifier {
 
   /// Signs in without the API (widget tests).
   @visibleForTesting
-  void debugSetSession(AuthSession? session) {
+  void debugSetSession(UserSession? session) {
     _session = session;
     _remember = false;
     notifyListeners();

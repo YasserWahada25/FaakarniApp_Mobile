@@ -242,11 +242,11 @@ class _QuickAccess extends StatelessWidget {
 
   static const List<_QuickAccessItem> _items = [
     _QuickAccessItem('Alzheimer', Icons.psychology_alt_outlined, AppRoutes.alzheimer),
-    _QuickAccessItem('Geofencing', Icons.map_outlined, AppRoutes.geofencing),
+    _QuickAccessItem('Geofencing', Icons.map_outlined, AppRoutes.geofencing, push: true),
     _QuickAccessItem('Educational', Icons.school_outlined, AppRoutes.educational),
     _QuickAccessItem('Communication', Icons.forum_outlined, AppRoutes.communication),
     _QuickAccessItem('Medical', Icons.medical_services_outlined, AppRoutes.medical, push: true),
-    _QuickAccessItem('Posts', Icons.dynamic_feed_outlined, AppRoutes.posts, push: true),
+    _QuickAccessItem('Posts', Icons.dynamic_feed_outlined, AppRoutes.posts),
   ];
 
   @override

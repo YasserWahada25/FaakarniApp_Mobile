@@ -66,4 +66,14 @@ abstract final class ApiConfig {
   }
 
   static const _localHosts = {'localhost', '127.0.0.1'};
+
+  /// Absolute URL of a file path returned by the API (e.g. `/uploads/groups/x.png`).
+  static String? mediaUrl(String? pathOrUrl) => resolveMedia(pathOrUrl);
+
+  /// Raw (non-SockJS) STOMP endpoint of Chat_Service, through the gateway
+  /// route `/chat-ws/**` (rewritten to the service's `/ws/**`).
+  static String get chatSocketUrl {
+    final root = uri('/chat-ws/websocket');
+    return root.replace(scheme: root.scheme == 'https' ? 'wss' : 'ws').toString();
+  }
 }

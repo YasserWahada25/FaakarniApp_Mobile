@@ -144,10 +144,10 @@ class UpdateUserRequest {
 }
 
 /// Signed-in session (User-Service `AuthResponse`).
-class AuthSession {
-  const AuthSession({required this.accessToken, required this.refreshToken, required this.user});
+class UserSession {
+  const UserSession({required this.accessToken, required this.refreshToken, required this.user});
 
-  factory AuthSession.fromJson(Map<String, dynamic> json) => AuthSession(
+  factory UserSession.fromJson(Map<String, dynamic> json) => UserSession(
         accessToken: (json['accessToken'] as String?) ?? '',
         refreshToken: (json['refreshToken'] as String?) ?? '',
         user: AppUser.fromJson((json['user'] as Map?)?.cast<String, dynamic>() ?? const {}),
@@ -159,8 +159,8 @@ class AuthSession {
 
   Map<String, dynamic> toJson() => {'accessToken': accessToken, 'refreshToken': refreshToken, 'user': user.toJson()};
 
-  AuthSession copyWith({AppUser? user}) =>
-      AuthSession(accessToken: accessToken, refreshToken: refreshToken, user: user ?? this.user);
+  UserSession copyWith({AppUser? user}) =>
+      UserSession(accessToken: accessToken, refreshToken: refreshToken, user: user ?? this.user);
 
   /// Expiry of the access token (JWT `exp` claim, 15 min on the User-Service).
   DateTime? get accessTokenExpiry => _jwtExpiry(accessToken);

@@ -7,7 +7,7 @@ import 'detection_tab.dart';
 import 'follow_up_tab.dart';
 import 'records_tab.dart';
 
-/// Web `/medical/*` (sidebar "Medical Care"). Full-screen module.
+/// Web `/medical/*` (sidebar "Medical Care"). Bottom navigation tab.
 class MedicalScreen extends StatelessWidget {
   const MedicalScreen({super.key, this.initialTab});
 
@@ -18,7 +18,6 @@ class MedicalScreen extends StatelessWidget {
     return ModuleTabScaffold(
       title: 'Medical Care',
       accentColor: ModuleColors.medical,
-      showDrawerButton: false,
       initialIndex: ModuleTabs.indexOf(ModuleTabs.medical, initialTab),
       tabs: const [
         ModuleTab(label: 'Medical Records', icon: Icons.folder_shared_outlined, body: RecordsTab()),

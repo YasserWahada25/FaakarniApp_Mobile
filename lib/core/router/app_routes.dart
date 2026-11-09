@@ -13,14 +13,14 @@ abstract final class AppRoutes {
   /// Home shows the Community Posts feed.
   static const String home = '/home';
   static const String alzheimer = '/alzheimer';
-  static const String geofencing = '/geofencing';
+  static const String medical = '/medical';
   static const String educational = '/educational';
   static const String communication = '/communication';
 
   // Full-screen modules
   /// Redirects to [home]; its sub-pages below open full-screen.
   static const String posts = '/posts';
-  static const String medical = '/medical';
+  static const String geofencing = '/geofencing';
   static const String profile = '/profile';
 
   // Alzheimer

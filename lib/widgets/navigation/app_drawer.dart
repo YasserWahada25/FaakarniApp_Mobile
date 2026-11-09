@@ -41,9 +41,9 @@ class AppDrawer extends StatelessWidget {
       _DrawerLink('Notifications', AppRoutes.withTab(AppRoutes.alzheimer, 'notifications')),
     ]),
     _DrawerSection('GEOFENCING', Icons.map_outlined, [
-      _DrawerLink('Live Tracking', AppRoutes.withTab(AppRoutes.geofencing, 'tracking')),
-      _DrawerLink('Alert & History', AppRoutes.withTab(AppRoutes.geofencing, 'alerts')),
-      _DrawerLink('Supervision & Stats', AppRoutes.withTab(AppRoutes.geofencing, 'supervision')),
+      _DrawerLink('Live Tracking', AppRoutes.withTab(AppRoutes.geofencing, 'tracking'), push: true),
+      _DrawerLink('Alert & History', AppRoutes.withTab(AppRoutes.geofencing, 'alerts'), push: true),
+      _DrawerLink('Supervision & Stats', AppRoutes.withTab(AppRoutes.geofencing, 'supervision'), push: true),
     ]),
     _DrawerSection('EDUCATIONAL', Icons.school_outlined, [
       _DrawerLink('Activities & Content', AppRoutes.withTab(AppRoutes.educational, 'activities')),
@@ -55,9 +55,9 @@ class AppDrawer extends StatelessWidget {
       _DrawerLink('Groups & Support', AppRoutes.withTab(AppRoutes.communication, 'groups')),
     ]),
     _DrawerSection('MEDICAL FOLLOW-UP', Icons.medical_services_outlined, [
-      _DrawerLink('Disease Detection', AppRoutes.withTab(AppRoutes.medical, 'detection'), push: true),
-      _DrawerLink('Medical Records', AppRoutes.withTab(AppRoutes.medical, 'records'), push: true),
-      _DrawerLink('Follow-up', AppRoutes.withTab(AppRoutes.medical, 'follow-up'), push: true),
+      _DrawerLink('Disease Detection', AppRoutes.withTab(AppRoutes.medical, 'detection')),
+      _DrawerLink('Medical Records', AppRoutes.withTab(AppRoutes.medical, 'records')),
+      _DrawerLink('Follow-up', AppRoutes.withTab(AppRoutes.medical, 'follow-up')),
     ]),
     _DrawerSection('POSTS', Icons.dynamic_feed_outlined, [
       _DrawerLink('Community Posts', AppRoutes.home),

@@ -40,11 +40,11 @@ import 'app_routes.dart';
 /// - Auth pages are standalone (web: no header/footer) and public; every other
 ///   page requires a session (web `authGuard`), and a signed-in user skips the
 ///   sign-in / sign-up pages.
-/// - The five main modules (home = Community Posts, alzheimer, geofencing,
-///   educational, communication) live in a [StatefulShellRoute] (bottom
-///   navigation, each tab keeps its own navigation stack).
+/// - The five main modules (home = Community Posts, alzheimer, medical
+///   follow-up, educational, communication) live in a [StatefulShellRoute]
+///   (bottom navigation, each tab keeps its own navigation stack).
 /// - Forms, details, the meeting room and the secondary modules (posts pages,
-///   medical, profile) are pushed full-screen on the root navigator.
+///   geofencing, profile) are pushed full-screen on the root navigator.
 abstract final class AppRouter {
   static final GlobalKey<NavigatorState> _rootKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 
@@ -114,17 +114,16 @@ abstract final class AppRouter {
           ]),
           StatefulShellBranch(routes: [
             GoRoute(
-              path: AppRoutes.geofencing,
-              builder: (_, state) => GeofencingScreen(
-                initialTab: _tab(state),
-                role: AuthProvider.instance.user?.role ?? UserRole.careOwner,
-              ),
+              path: AppRoutes.medical,
+              builder: (_, state) => MedicalScreen(initialTab: _tab(state)),
               routes: [
-                GoRoute(path: 'zones/new', parentNavigatorKey: _rootKey, builder: (_, _) => const ZoneFormScreen()),
                 GoRoute(
-                  path: 'zones/edit',
+                  path: 'follow-up/:patientId',
                   parentNavigatorKey: _rootKey,
-                  builder: (_, state) => ZoneFormScreen(zone: state.extra as SafeZone?),
+                  builder: (_, state) => PatientDossierScreen(
+                    patientId: state.pathParameters['patientId']!,
+                    patient: state.extra as FollowUpPatient?,
+                  ),
                 ),
               ],
             ),
@@ -191,16 +190,14 @@ abstract final class AppRouter {
         ),
       ),
       GoRoute(
-        path: AppRoutes.medical,
-        builder: (_, state) => MedicalScreen(initialTab: _tab(state)),
+        path: AppRoutes.geofencing,
+        builder: (_, state) => GeofencingScreen(
+          initialTab: _tab(state),
+          role: AuthProvider.instance.user?.role ?? UserRole.careOwner,
+        ),
         routes: [
-          GoRoute(
-            path: 'follow-up/:patientId',
-            builder: (_, state) => PatientDossierScreen(
-              patientId: state.pathParameters['patientId']!,
-              patient: state.extra as FollowUpPatient?,
-            ),
-          ),
+          GoRoute(path: 'zones/new', builder: (_, _) => const ZoneFormScreen()),
+          GoRoute(path: 'zones/edit', builder: (_, state) => ZoneFormScreen(zone: state.extra as SafeZone?)),
         ],
       ),
       // The feed itself is Home: `/posts` leads there, its sub-pages open full-screen.

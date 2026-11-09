@@ -125,7 +125,7 @@ void main() {
       expect(json['locationAddress'], 'Centre');
     });
 
-    test('an online group request has no location and is public', () {
+    test('an online group request has no location and stays private', () {
       final json = ReservationRequest(
         title: 'Groupe',
         description: 'Besoin',
@@ -135,7 +135,8 @@ void main() {
         audience: SessionAudience.group,
       ).toJson();
       expect(json['meetingMode'], 'ONLINE');
-      expect(json['visibility'], 'PUBLIC');
+      expect(json['sessionType'], 'GROUP');
+      expect(json['visibility'], 'PRIVATE');
       expect(json.containsKey('locationLatitude'), isFalse);
       expect(json.containsKey('locationAddress'), isFalse);
     });
@@ -271,6 +272,19 @@ void main() {
       provider = SessionsProvider(service: SessionService(client: backend.client, currentUserId: () => 'u1'));
       backend.routes['GET /session/sessions'] = (_) => _json([_sessionJson(id: 1)]);
       backend.routes['GET /session/me/favorites'] = (_) => _json(<Object>[]);
+    });
+
+    test("the reservations are the user's own requests only", () async {
+      backend.routes['GET /session/sessions'] = (_) => _json([
+            _sessionJson(id: 1, createdBy: 'u1', visibility: 'PRIVATE', status: 'DRAFT'),
+            _sessionJson(id: 2, createdBy: 'admin'),
+            _sessionJson(id: 3, createdBy: 'other', visibility: 'PRIVATE', participants: [
+              {'userId': 'u1', 'role': 'ORGANIZER', 'joinStatus': 'CONFIRMED'},
+            ]),
+          ]);
+      await provider.load();
+      expect(provider.sessions.map((s) => s.id), [1, 2, 3]);
+      expect(provider.myRequests.map((s) => s.id), [1]);
     });
 
     test('concurrent loads share the same requests', () async {

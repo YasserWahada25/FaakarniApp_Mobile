@@ -166,6 +166,9 @@ class Session {
     return createdBy == userId || participantIds.contains(userId);
   }
 
+  /// A request made by [userId] (the "Réservations" tab).
+  bool isRequestedBy(String? userId) => userId != null && userId.isNotEmpty && createdBy == userId;
+
   bool overlaps(DateTime from, DateTime to) => from.isBefore(end) && to.isAfter(start);
 
   Session copyWith({bool? isFavorite, SessionStatus? status}) => Session(
@@ -215,8 +218,9 @@ class ReservationRequest {
   final double? latitude;
   final double? longitude;
 
-  SessionVisibility get visibility =>
-      audience == SessionAudience.group ? SessionVisibility.public : SessionVisibility.private;
+  /// A request, group or not, is seen only by its author, the participants
+  /// added to it and the admin (session-service enforces it).
+  SessionVisibility get visibility => SessionVisibility.private;
 
   /// session-service `CreateSessionRequest`. The server sets `createdBy` from
   /// the token and forces the DRAFT status for non-admins.

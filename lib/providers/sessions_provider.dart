@@ -23,6 +23,9 @@ class SessionsProvider extends ChangeNotifier {
   Session? _lastCreated;
 
   List<Session> get sessions => _sessions;
+
+  /// The signed-in user's own requests, whatever their status.
+  List<Session> get myRequests => _sessions.where((s) => s.isRequestedBy(_service.currentUserId)).toList();
   List<Session> get favorites => _favorites;
   ViewStatus get status => _status;
   String? get error => _error;

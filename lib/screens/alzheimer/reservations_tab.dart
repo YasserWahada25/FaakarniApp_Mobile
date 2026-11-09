@@ -54,9 +54,9 @@ class _ReservationsTabState extends State<ReservationsTab> {
     });
   }
 
-  int _count(SessionStatus status) => _provider.sessions.where((s) => s.status == status).length;
+  int _count(SessionStatus status) => _provider.myRequests.where((s) => s.status == status).length;
 
-  List<Session> _on(DateTime day) => _provider.sessions.where((s) => s.start.isSameDay(day)).toList();
+  List<Session> _on(DateTime day) => _provider.myRequests.where((s) => s.start.isSameDay(day)).toList();
 
   @override
   Widget build(BuildContext context) {
@@ -91,7 +91,7 @@ class _ReservationsTabState extends State<ReservationsTab> {
               ),
               const SizedBox(height: AppSpacing.md),
               StatGrid(children: [
-                StatCard(label: 'Total', value: '${_provider.sessions.length}'),
+                StatCard(label: 'Total', value: '${_provider.myRequests.length}'),
                 StatCard(
                   label: 'En attente',
                   value: '${_count(SessionStatus.draft)}',

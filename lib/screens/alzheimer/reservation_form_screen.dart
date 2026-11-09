@@ -152,7 +152,6 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    final visibility = _audience == SessionAudience.group ? SessionVisibility.public : SessionVisibility.private;
     return Scaffold(
       appBar: AppBar(
         leading: const CloseButton(),
@@ -251,7 +250,8 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
               const SizedBox(height: AppSpacing.lg),
               FeedbackBanner(
                 kind: BannerKind.info,
-                message: 'Visibilite appliquee automatiquement: ${visibility.label}',
+                message: 'Visibilite appliquee automatiquement: Privee (vous, les participants invites et '
+                    "l'administrateur)",
               ),
               if (_error != null) ...[
                 const SizedBox(height: AppSpacing.lg),

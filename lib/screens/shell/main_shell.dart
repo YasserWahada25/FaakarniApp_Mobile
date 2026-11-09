@@ -17,11 +17,7 @@ class MainShell extends StatelessWidget {
       selectedIcon: Icon(Icons.calendar_month_rounded),
       label: 'Alzheimer',
     ),
-    NavigationDestination(
-      icon: Icon(Icons.dynamic_feed_outlined),
-      selectedIcon: Icon(Icons.dynamic_feed_rounded),
-      label: 'Posts',
-    ),
+    NavigationDestination(icon: Icon(Icons.map_outlined), selectedIcon: Icon(Icons.map_rounded), label: 'Geofencing'),
     NavigationDestination(icon: Icon(Icons.school_outlined), selectedIcon: Icon(Icons.school_rounded), label: 'Education'),
     NavigationDestination(icon: Icon(Icons.forum_outlined), selectedIcon: Icon(Icons.forum_rounded), label: 'Messages'),
   ];

@@ -10,14 +10,16 @@ abstract final class AppRoutes {
   static const String resetPassword = '/reset-password';
 
   // Bottom navigation branches
+  /// Home shows the Community Posts feed.
   static const String home = '/home';
   static const String alzheimer = '/alzheimer';
-  static const String posts = '/posts';
+  static const String geofencing = '/geofencing';
   static const String educational = '/educational';
   static const String communication = '/communication';
 
   // Full-screen modules
-  static const String geofencing = '/geofencing';
+  /// Redirects to [home]; its sub-pages below open full-screen.
+  static const String posts = '/posts';
   static const String medical = '/medical';
   static const String profile = '/profile';
 

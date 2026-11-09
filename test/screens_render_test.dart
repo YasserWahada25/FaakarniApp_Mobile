@@ -62,7 +62,6 @@ void main() {
     '/medical?tab=detection',
     '/medical?tab=follow-up',
     '/medical/follow-up/p1',
-    '/posts',
     '/posts/create',
     '/posts/my-posts',
     '/posts/edit/1',
@@ -90,6 +89,11 @@ void main() {
       if (find.byType(Scaffold).evaluate().isEmpty) failures.add('$location → no Scaffold');
     }
     expect(failures, isEmpty);
+
+    // The feed is Home: the old `/posts` address leads there.
+    AppRouter.router.go('/posts');
+    await _settle(tester);
+    expect(AppRouter.router.routerDelegate.currentConfiguration.uri.path, '/home');
   });
 
   testWidgets('geofencing patient views render', (tester) async {

@@ -90,8 +90,10 @@ void main() {
     AuthProvider.instance.debugSetSession(testSession);
     await _settle(tester);
 
-    // A signed-in user skips the sign-in page.
-    expect(find.text('Quick access'), findsOneWidget);
+    // A signed-in user skips the sign-in page and lands on Home: the
+    // Community Posts feed.
+    expect(find.text('Community Posts'), findsWidgets);
+    expect(find.text('Create Post'), findsOneWidget);
 
     // Bottom navigation
     await tester.tap(find.text('Alzheimer').last);
@@ -99,10 +101,9 @@ void main() {
     expect(find.text('Alzheimer Care'), findsOneWidget);
     expect(find.text('Filtrer le calendrier'), findsOneWidget);
 
-    await tester.tap(find.text('Posts').last);
+    await tester.tap(find.text('Geofencing').last);
     await _settle(tester);
-    expect(find.text('Community Posts'), findsWidgets);
-    expect(find.text('Create Post'), findsOneWidget);
+    expect(find.text('Configured Zones'), findsOneWidget);
 
     await tester.tap(find.text('Education').last);
     await _settle(tester);
@@ -123,18 +124,15 @@ void main() {
     // The favorites come from the API (unreachable in tests): only the page is checked.
     expect(find.text('My Favorite Sessions'), findsOneWidget);
 
-    // Geofencing left the bottom bar: it opens full-screen from the drawer,
-    // with a back button.
+    // Drawer → Community Posts goes back to Home, in the bottom bar.
     await tester.tap(find.byTooltip('Menu'));
     await _settle(tester, 1);
-    await tester.tap(find.text('GEOFENCING'));
+    await tester.tap(find.text('POSTS'));
     await _settle(tester, 1);
-    await tester.tap(find.text('Live Tracking').last);
+    await tester.tap(find.text('Community Posts').last);
     await _settle(tester);
-    expect(find.text('Configured Zones'), findsOneWidget);
-    expect(find.byType(NavigationBar), findsNothing);
-    await tester.tap(find.byType(BackButton));
-    await _settle(tester);
+    expect(AppRouter.router.routerDelegate.currentConfiguration.uri.path, AppRoutes.home);
+    expect(find.text('Create Post'), findsOneWidget);
     expect(find.byType(NavigationBar), findsOneWidget);
 
     // Logout (drawer): back to the sign-in page.

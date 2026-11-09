@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../models/educational.dart';
+import '../../services/educational_service.dart';
 import '../../widgets/common/app_card.dart';
+import '../../widgets/common/async_state_view.dart';
 import '../../widgets/common/charts.dart';
 import '../../widgets/common/section_header.dart';
 import '../../widgets/common/stat_card.dart';
@@ -18,10 +20,33 @@ class ProgressTab extends StatefulWidget {
 }
 
 class _ProgressTabState extends State<ProgressTab> {
-  // Filled by the progress API.
   LearningProgress? _progress;
+  ViewStatus _status = ViewStatus.loading;
+  String? _error;
 
-  Future<void> _load() async {}
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _error = null);
+    try {
+      final progress = await EducationalService.instance.getProgress();
+      if (!mounted) return;
+      setState(() {
+        _progress = progress;
+        _status = ViewStatus.ready;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '$e';
+        _status = ViewStatus.error;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -40,6 +65,14 @@ class _ProgressTabState extends State<ProgressTab> {
             ],
           ),
           const SizedBox(height: AppSpacing.lg),
+          if (_status == ViewStatus.loading) ...[
+            const LinearProgressIndicator(),
+            const SizedBox(height: AppSpacing.md),
+          ],
+          if (_status == ViewStatus.error && p == null) ...[
+            ErrorStateView(message: _error ?? 'Impossible de charger la progression.', onRetry: _load),
+            const SizedBox(height: AppSpacing.md),
+          ],
           StatCard(
             label: 'Activities Done',
             value: '${p?.completedActivities ?? 0}',

@@ -4,11 +4,14 @@ import 'package:fakarniapp/core/router/app_routes.dart';
 import 'package:fakarniapp/core/utils/clinical_scoring.dart';
 import 'package:fakarniapp/core/utils/validators.dart';
 import 'package:fakarniapp/main.dart';
+import 'package:fakarniapp/providers/auth_provider.dart';
 import 'package:fakarniapp/screens/onboarding/onboarding_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/date_symbol_data_local.dart';
+
+import 'test_session.dart';
 
 /// Pumps frames for [seconds] without waiting for infinite animations
 /// (shimmers) to settle.
@@ -59,21 +62,35 @@ void main() {
     });
   });
 
-  testWidgets('sign in, then navigate through the bottom bar and the drawer', (tester) async {
+  testWidgets('signed out: app pages redirect to sign-in, which validates the form', (tester) async {
     tester.view.physicalSize = const Size(1170, 2532);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
 
     await tester.pumpWidget(const FakarniApp());
+    AppRouter.router.go(AppRoutes.educational);
+    await _settle(tester);
+    expect(find.text('Sign In'), findsOneWidget);
+
+    await tester.tap(find.text('SIGN IN'));
+    await _settle(tester, 1);
+    expect(find.text('Email is required.'), findsOneWidget);
+    expect(find.text('Password is required.'), findsOneWidget);
+  });
+
+  testWidgets('signed in: navigate through the bottom bar and the drawer, then log out', (tester) async {
+    tester.view.physicalSize = const Size(1170, 2532);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    addTearDown(() => AuthProvider.instance.debugSetSession(null));
+
+    await tester.pumpWidget(const FakarniApp());
     AppRouter.router.go(AppRoutes.signIn);
     await _settle(tester);
-
-    // While the auth API is not wired, SIGN IN goes straight to Home.
-    expect(find.text('Sign In'), findsOneWidget);
-    await tester.tap(find.text('SIGN IN'));
+    AuthProvider.instance.debugSetSession(testSession);
     await _settle(tester);
 
-    // Home
+    // A signed-in user skips the sign-in page.
     expect(find.text('Quick access'), findsOneWidget);
 
     // Bottom navigation
@@ -89,7 +106,7 @@ void main() {
     await tester.tap(find.text('Education').last);
     await _settle(tester);
     expect(find.text('Jeux & activités'), findsOneWidget);
-    expect(find.text('Aucune activité à afficher.'), findsOneWidget);
+    // The catalogue comes from the API (unreachable in tests): no crash.
 
     await tester.tap(find.text('Messages').last);
     await _settle(tester);
@@ -102,15 +119,27 @@ void main() {
     await _settle(tester, 1);
     await tester.tap(find.text('Favorites').last);
     await _settle(tester);
-    expect(find.text('No Favorites Yet'), findsOneWidget);
+    // The favorites come from the API (unreachable in tests): only the page is checked.
+    expect(find.text('My Favorite Sessions'), findsOneWidget);
+
+    // Logout (drawer): back to the sign-in page.
+    await tester.tap(find.byTooltip('Menu'));
+    await _settle(tester, 1);
+    expect(find.text('Sami Ben Ali'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Logout'), 200, scrollable: find.byType(Scrollable).last);
+    await tester.tap(find.text('Logout'));
+    await _settle(tester);
+    expect(AuthProvider.instance.isAuthenticated, isFalse);
+    expect(find.text('Sign In'), findsOneWidget);
   });
 
   Future<void> pumpOnboarding(WidgetTester tester) async {
     tester.view.physicalSize = const Size(1080, 2220);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(const FakarniApp());
+    // Before the first build: no transition from the previous test's page.
     AppRouter.router.go(AppRoutes.onboarding);
+    await tester.pumpWidget(const FakarniApp());
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100)); // let go_router build the page
   }

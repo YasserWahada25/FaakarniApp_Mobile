@@ -6,6 +6,7 @@ import '../../core/theme/app_dimens.dart';
 import '../../core/utils/formatters.dart';
 import '../../models/educational.dart';
 import '../common/app_chip.dart';
+import '../common/network_picture.dart';
 
 extension ActivityTypeStyle on ActivityType {
   /// Badge colors (activities-list.component.css `.badge-*`).
@@ -38,13 +39,17 @@ extension ActivityTypeStyle on ActivityType {
 
 /// Game thumbnail (native version of the web SVG catalogue).
 class ActivityThumbnail extends StatelessWidget {
-  const ActivityThumbnail({super.key, required this.type, this.height = AppSizes.thumbHeight});
+  const ActivityThumbnail({super.key, required this.type, this.height = AppSizes.thumbHeight, this.imageUrl});
 
   final ActivityType type;
   final double height;
 
+  /// Thumbnail uploaded in the back-office; the gradient is used otherwise.
+  final String? imageUrl;
+
   @override
   Widget build(BuildContext context) {
+    if (imageUrl != null) return NetworkPicture(url: imageUrl!, height: height, width: double.infinity);
     final colors = type.thumbColors;
     return Container(
       height: height,
@@ -94,7 +99,7 @@ class ActivityCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              ActivityThumbnail(type: activity.type, height: AppSizes.coverSm),
+              ActivityThumbnail(type: activity.type, height: AppSizes.coverSm, imageUrl: activity.thumbnailUrl),
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.all(AppSpacing.md),
@@ -153,7 +158,16 @@ class EventCard extends StatelessWidget {
         children: [
           Container(
             height: AppSizes.coverHeight - 30,
-            decoration: BoxDecoration(gradient: AppGradients.diagonal(cover.first, cover.last)),
+            decoration: BoxDecoration(
+              gradient: AppGradients.diagonal(cover.first, cover.last),
+              image: event.coverImageUrl == null
+                  ? null
+                  : DecorationImage(
+                      image: NetworkImage(event.coverImageUrl!),
+                      fit: BoxFit.cover,
+                      onError: (_, _) {},
+                    ),
+            ),
             padding: const EdgeInsets.all(AppSpacing.md),
             alignment: Alignment.bottomLeft,
             child: Container(

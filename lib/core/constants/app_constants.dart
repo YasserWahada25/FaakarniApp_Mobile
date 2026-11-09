@@ -1,16 +1,12 @@
 import 'package:latlong2/latlong.dart';
 
-/// App-wide constants (branding, contact info, map configuration, mock backend).
+/// App-wide constants (branding, contact info, map configuration, form limits).
 abstract final class AppConstants {
   static const String appName = 'Fakarni';
   static const String brandName = 'FAKARNI';
   static const String tagline = 'فكرني';
   static const String logoMarkAsset = 'assets/images/logo_mark.png'; // white brain-bubble mark
   static const String logoAsset = 'assets/images/logo.png';
-
-  /// While the auth API is not wired, the sign-in button opens Home without
-  /// validating the form. Set to `false` once authentication is implemented.
-  static const bool skipAuth = true;
 
   // Footer / contact (footer.component.html)
   static const String contactAddress = '123 Care Street, City, Country';

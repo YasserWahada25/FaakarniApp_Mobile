@@ -43,3 +43,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local backend settings (flutter run --dart-define-from-file=config/dev.json)
+config/dev.json

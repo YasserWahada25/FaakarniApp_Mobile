@@ -1,12 +1,17 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../models/meeting.dart';
 import '../../widgets/common/app_card.dart';
+import '../../widgets/common/dialogs.dart';
 import '../../widgets/common/section_header.dart';
 
-/// Web `notifications/notification-settings.component`.
+/// Web `notifications/notification-settings.component`. The backend has no
+/// such settings: the web only simulates saving them, here they stay on the device.
 class NotificationsTab extends StatefulWidget {
   const NotificationsTab({super.key});
 
@@ -35,10 +40,52 @@ class _NotificationsTabState extends State<NotificationsTab> {
     NotificationPreference(id: 'sound_alert', label: 'Play Sound on Reminder', kind: PreferenceKind.toggle, enabled: true),
   ];
 
+  static const _storageKey = 'alzheimer_notification_preferences';
+  static const _storage = FlutterSecureStorage();
+
+  @override
+  void initState() {
+    super.initState();
+    _restore();
+  }
+
+  Future<void> _restore() async {
+    try {
+      final raw = await _storage.read(key: _storageKey);
+      if (raw == null || !mounted) return;
+      final saved = jsonDecode(raw) as Map<String, dynamic>;
+      setState(() {
+        _preferences = [
+          for (final p in _preferences)
+            switch (saved[p.id]) {
+              {'enabled': final bool enabled, 'frequency': final String? frequency} =>
+                p.copyWith(enabled: enabled, frequency: frequency),
+              _ => p,
+            },
+        ];
+      });
+    } catch (_) {
+      // Nothing readable saved: the defaults stay.
+    }
+  }
+
   void _update(NotificationPreference pref) =>
       setState(() => _preferences = [for (final p in _preferences) p.id == pref.id ? pref : p]);
 
-  void _saveSettings() {}
+  Future<void> _saveSettings() async {
+    var message = 'Préférences enregistrées sur cet appareil.';
+    try {
+      await _storage.write(
+        key: _storageKey,
+        value: jsonEncode({
+          for (final p in _preferences) p.id: {'enabled': p.enabled, 'frequency': p.frequency},
+        }),
+      );
+    } catch (_) {
+      message = "Impossible d'enregistrer les préférences.";
+    }
+    if (mounted) showAppSnackBar(context, message);
+  }
 
   @override
   Widget build(BuildContext context) {

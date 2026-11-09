@@ -6,8 +6,11 @@ import '../../core/router/app_routes.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/utils/validators.dart';
 import '../../models/user.dart';
+import '../../services/auth_service.dart';
 import '../../widgets/auth/auth_scaffold.dart';
+import '../../widgets/common/dialogs.dart';
 import '../../widgets/common/form_fields.dart';
+import '../../widgets/common/state_views.dart';
 
 /// Web `/auth/signup`.
 class SignUpScreen extends StatefulWidget {
@@ -26,6 +29,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final _phone = TextEditingController();
   final _address = TextEditingController();
   UserRole _role = UserRole.patient;
+  bool _busy = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -35,9 +40,32 @@ class _SignUpScreenState extends State<SignUpScreen> {
     super.dispose();
   }
 
-  void _submit() {
-    if (!_formKey.currentState!.validate()) return;
-    context.go(AppRoutes.signIn);
+  /// Web `SignUpComponent.onSubmit`: creates the account, then back to sign-in.
+  Future<void> _submit() async {
+    if (_busy || !_formKey.currentState!.validate()) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await AuthService.instance.register(SignUpRequest(
+        nom: _nom.text.trim(),
+        prenom: _prenom.text.trim(),
+        email: _email.text.trim(),
+        password: _password.text,
+        role: _role,
+        numTel: _phone.text.trim(),
+        adresse: _address.text.trim(),
+      ));
+      if (!mounted) return;
+      showAppSnackBar(context, 'Compte créé. Connectez-vous avec votre email et votre mot de passe.');
+      context.go(AppRoutes.signIn);
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
@@ -51,6 +79,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (_error != null) ...[
+              FeedbackBanner(message: _error!, onClose: () => setState(() => _error = null)),
+              const SizedBox(height: AppSpacing.md),
+            ],
             AppTextField(
               label: 'Name',
               controller: _nom,
@@ -82,7 +114,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
             AppDropdownField<UserRole>(
               label: 'Role',
               value: _role,
-              items: UserRole.values,
+              items: UserRole.selectable,
               itemLabel: (r) => r.label,
               onChanged: (r) => setState(() => _role = r ?? _role),
             ),
@@ -92,7 +124,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
               hint: 'Ex: 12345678',
               keyboardType: TextInputType.phone,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(8)],
-              validator: Validators.phone,
+              // Optional on the API (web: pattern only).
+              validator: (v) => (v ?? '').trim().isEmpty ? null : Validators.phone(v),
             ),
             AppTextField(
               label: 'Address',
@@ -102,7 +135,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
               validator: (v) => Validators.required(v, 'Address is required.'),
             ),
             const SizedBox(height: AppSpacing.sm),
-            FilledButton(onPressed: _submit, child: const Text('SIGN UP')),
+            FilledButton(
+              onPressed: _busy ? null : _submit,
+              child: _busy ? const ButtonSpinner() : const Text('SIGN UP'),
+            ),
             const SizedBox(height: AppSpacing.lg),
             AuthFooterLink(
               text: 'Already have an account?',

@@ -2,12 +2,15 @@ import 'package:fakarniapp/core/router/app_router.dart';
 import 'package:fakarniapp/core/theme/app_theme.dart';
 import 'package:fakarniapp/main.dart';
 import 'package:fakarniapp/models/user.dart';
+import 'package:fakarniapp/providers/auth_provider.dart';
 import 'package:fakarniapp/screens/geofencing/geofencing_screen.dart';
 import 'package:fakarniapp/screens/medical/medical_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/date_symbol_data_local.dart';
+
+import 'test_session.dart';
 
 Future<void> _settle(WidgetTester tester, [int steps = 10]) async {
   for (var i = 0; i < steps; i++) {
@@ -68,6 +71,8 @@ void main() {
 
   testWidgets('every route renders on a small phone', (tester) async {
     _smallPhone(tester);
+    AuthProvider.instance.debugSetSession(testSession);
+    addTearDown(() => AuthProvider.instance.debugSetSession(null));
     await tester.pumpWidget(const FakarniApp());
     await _settle(tester);
 
@@ -75,6 +80,11 @@ void main() {
     for (final location in locations) {
       AppRouter.router.go(location);
       await _settle(tester);
+      // Signed in: only the sign-in / sign-up pages redirect (to Home).
+      final shown = AppRouter.router.routerDelegate.currentConfiguration.uri.path;
+      if (!location.startsWith(shown) && !{'/signin', '/signup'}.contains(location)) {
+        failures.add('$location → redirected to $shown');
+      }
       final error = tester.takeException();
       if (error != null) failures.add('$location → ${error is FlutterError ? error.toStringDeep() : error}');
       if (find.byType(Scaffold).evaluate().isEmpty) failures.add('$location → no Scaffold');

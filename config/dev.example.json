@@ -1,0 +1,4 @@
+{
+  "API_BASE_URL": "https://<codespace>-8090.app.github.dev",
+  "PATIENT_ID": "<id d'un utilisateur PATIENT_PROFILE>"
+}

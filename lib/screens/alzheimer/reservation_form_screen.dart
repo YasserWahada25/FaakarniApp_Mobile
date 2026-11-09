@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -8,8 +9,11 @@ import '../../core/theme/app_dimens.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/validators.dart';
 import '../../models/session.dart';
+import '../../providers/sessions_provider.dart';
+import '../../services/api_client.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_map.dart';
+import '../../widgets/common/dialogs.dart';
 import '../../widgets/common/form_fields.dart';
 import '../../widgets/common/state_views.dart';
 
@@ -37,6 +41,9 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
   TimeOfDay _start = const TimeOfDay(hour: 10, minute: 0);
   TimeOfDay _end = const TimeOfDay(hour: 11, minute: 0);
   bool _submitted = false;
+  bool _submitting = false;
+  bool _locating = false;
+  String? _error;
 
   bool get _timeRangeValid => _end.hour * 60 + _end.minute > _start.hour * 60 + _start.minute;
 
@@ -75,11 +82,71 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
         _lon.text = point.longitude.toStringAsFixed(6);
       });
 
-  void _submit() {
+  Future<void> _useCurrentLocation() async {
+    setState(() {
+      _locating = true;
+      _error = null;
+    });
+    String? error;
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        error = 'La geolocalisation est desactivee sur cet appareil.';
+      } else {
+        var permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+          error = "L'acces a votre position a ete refuse.";
+        } else {
+          final position = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, timeLimit: Duration(seconds: 10)),
+          );
+          if (mounted) _pickOnMap(LatLng(position.latitude, position.longitude));
+        }
+      }
+    } catch (_) {
+      error = "Impossible d'obtenir votre position actuelle.";
+    }
+    if (!mounted) return;
+    setState(() {
+      _locating = false;
+      _error = error;
+    });
+  }
+
+  DateTime _at(TimeOfDay time) => DateTime(_date.year, _date.month, _date.day, time.hour, time.minute);
+
+  Future<void> _submit() async {
     setState(() => _submitted = true);
     final valid = _formKey.currentState!.validate();
-    if (!valid || !_timeRangeValid) return;
-    context.pop();
+    if (!valid || !_timeRangeValid || _submitting) return;
+
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    final inPerson = _mode == SessionMode.inPerson;
+    try {
+      await SessionsProvider.instance.createReservation(ReservationRequest(
+        title: _title.text,
+        description: _description.text,
+        start: _at(_start),
+        end: _at(_end),
+        mode: _mode,
+        audience: _audience,
+        locationAddress: inPerson ? _address.text : null,
+        latitude: inPerson ? double.tryParse(_lat.text) : null,
+        longitude: inPerson ? double.tryParse(_lon.text) : null,
+      ));
+      if (!mounted) return;
+      showAppSnackBar(context, 'Demande envoyée. Le docteur va la traiter.');
+      context.pop();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _submitting = false;
+        _error = e.message;
+      });
+    }
   }
 
   @override
@@ -186,6 +253,10 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
                 kind: BannerKind.info,
                 message: 'Visibilite appliquee automatiquement: ${visibility.label}',
               ),
+              if (_error != null) ...[
+                const SizedBox(height: AppSpacing.lg),
+                FeedbackBanner(message: _error!),
+              ],
               const SizedBox(height: AppSpacing.xxl),
               Row(
                 children: [
@@ -195,9 +266,9 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
                     flex: 2,
                     child: FilledButton.icon(
                       style: FilledButton.styleFrom(backgroundColor: ModuleColors.alzheimer),
-                      onPressed: _submit,
+                      onPressed: _submitting ? null : _submit,
                       icon: const Icon(Icons.send_rounded),
-                      label: const Text('Envoyer'),
+                      label: Text(_submitting ? 'Envoi...' : 'Envoyer'),
                     ),
                   ),
                 ],
@@ -218,9 +289,9 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
           Text('Localisation presentielle', style: text.titleSmall),
           const SizedBox(height: AppSpacing.sm),
           OutlinedButton.icon(
-            onPressed: null,
+            onPressed: _locating ? null : _useCurrentLocation,
             icon: const Icon(Icons.my_location_rounded),
-            label: const Text('Utiliser ma position'),
+            label: Text(_locating ? 'Localisation...' : 'Utiliser ma position'),
           ),
           const SizedBox(height: AppSpacing.md),
           AppMap(

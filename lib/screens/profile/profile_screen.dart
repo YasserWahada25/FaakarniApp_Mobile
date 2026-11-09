@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/router/app_routes.dart';
@@ -7,10 +8,13 @@ import '../../core/theme/app_decorations.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/utils/validators.dart';
 import '../../models/user.dart';
+import '../../providers/auth_provider.dart';
+import '../../widgets/common/dialogs.dart';
 import '../../widgets/common/form_fields.dart';
 import '../../widgets/common/initials_avatar.dart';
+import '../../widgets/common/state_views.dart';
 
-/// Web `/profile/edit`. [user] pre-fills the form once the profile API is wired.
+/// Web `/profile/edit`. [user] (the signed-in user) pre-fills the form.
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key, this.user});
 
@@ -28,6 +32,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late final _phone = TextEditingController(text: widget.user?.numTel);
   late final _address = TextEditingController(text: widget.user?.adresse);
   late UserRole? _role = widget.user?.role;
+  bool _busy = false;
+  String? _error;
+
+  /// Admins keep their role (not offered to other users).
+  late final List<UserRole> _roles = [...UserRole.selectable, if (widget.user?.role == UserRole.admin) UserRole.admin];
 
   @override
   void dispose() {
@@ -37,9 +46,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.dispose();
   }
 
-  void _save() {
-    if (!_formKey.currentState!.validate()) return;
-    context.pop();
+  /// Web `EditProfileComponent.save` (`PUT /api/users/{id}`).
+  Future<void> _save() async {
+    if (_busy || !_formKey.currentState!.validate()) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await AuthProvider.instance.updateProfile(UpdateUserRequest(
+        nom: _nom.text.trim(),
+        prenom: _prenom.text.trim(),
+        email: _email.text.trim(),
+        role: _role,
+        numTel: _phone.text.trim(),
+        adresse: _address.text.trim(),
+      ));
+      if (!mounted) return;
+      showAppSnackBar(context, 'Profil mis à jour.');
+      context.canPop() ? context.pop() : context.go(AppRoutes.home);
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
@@ -77,6 +108,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: AppSpacing.xxl),
+                        if (_error != null) ...[
+                          FeedbackBanner(message: _error!, onClose: () => setState(() => _error = null)),
+                          const SizedBox(height: AppSpacing.md),
+                        ],
                         AppTextField(label: 'Nom', controller: _nom, hint: 'Votre nom', validator: (v) => Validators.name(v, label: 'Nom')),
                         AppTextField(
                           label: 'Prénom',
@@ -95,7 +130,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           label: 'Rôle',
                           value: _role,
                           hint: 'Sélectionnez un rôle',
-                          items: UserRole.values,
+                          items: _roles,
                           itemLabel: (r) => r.label,
                           onChanged: (r) => setState(() => _role = r),
                           validator: (r) => r == null ? 'Role is required.' : null,
@@ -103,8 +138,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         AppTextField(
                           label: 'Numéro de téléphone',
                           controller: _phone,
-                          hint: 'Ex: 06 12 34 56 78',
+                          hint: 'Ex: 12345678',
                           keyboardType: TextInputType.phone,
+                          inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(8)],
+                          validator: (v) => (v ?? '').trim().isEmpty ? null : Validators.phone(v),
                         ),
                         AppTextField(
                           label: 'Adresse',
@@ -122,7 +159,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ),
                             ),
                             const SizedBox(width: AppSpacing.md),
-                            Expanded(child: FilledButton(onPressed: _save, child: const Text('Save'))),
+                            Expanded(
+                              child: FilledButton(
+                                onPressed: _busy ? null : _save,
+                                child: _busy ? const ButtonSpinner() : const Text('Save'),
+                              ),
+                            ),
                           ],
                         ),
                       ],

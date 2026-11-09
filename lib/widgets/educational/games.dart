@@ -5,24 +5,31 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_decorations.dart';
 import '../../core/theme/app_dimens.dart';
-import '../../core/theme/app_typography.dart';
 import '../../models/educational.dart';
 import '../common/app_card.dart';
 import '../common/charts.dart';
+import '../common/dialogs.dart';
+import '../common/network_picture.dart';
 
 // ─── Quiz (text and image recognition) ─────────────────────────────────────
+
+/// Sends an answer to the server. Returns the session result when the quiz
+/// is over, `null` to move on to the next question.
+typedef QuizAnswerHandler = Future<GameResult?> Function(QuizQuestion question, String answer, bool isLast);
 
 /// Web `quiz-game.component`.
 class QuizGame extends StatefulWidget {
   const QuizGame({
     super.key,
     required this.questions,
+    required this.onAnswer,
     required this.onCompleted,
     required this.onCancel,
     this.imageRecognition = false,
   });
 
   final List<QuizQuestion> questions;
+  final QuizAnswerHandler onAnswer;
   final ValueChanged<GameResult> onCompleted;
   final VoidCallback onCancel;
   final bool imageRecognition;
@@ -34,34 +41,30 @@ class QuizGame extends StatefulWidget {
 class _QuizGameState extends State<QuizGame> {
   int _index = 0;
   String? _selected;
-  final List<AnswerDetail> _answers = [];
+  bool _busy = false;
 
   QuizQuestion get _question => widget.questions[_index];
 
-  void _validate() {
-    final q = _question;
-    _answers.add(AnswerDetail(
-      prompt: q.prompt,
-      userAnswer: _selected!,
-      expectedAnswer: q.answer,
-      correct: _selected == q.answer,
-    ));
-    if (_index + 1 < widget.questions.length) {
+  Future<void> _validate() async {
+    final answer = _selected;
+    if (answer == null || _busy) return;
+    setState(() => _busy = true);
+    try {
+      final result = await widget.onAnswer(_question, answer, _index + 1 >= widget.questions.length);
+      if (!mounted) return;
+      if (result != null) {
+        widget.onCompleted(result);
+        return;
+      }
       setState(() {
         _index++;
         _selected = null;
       });
-      return;
+    } catch (e) {
+      if (mounted) showAppSnackBar(context, '$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
-    final good = _answers.where((a) => a.correct).length;
-    final score = (good * 100 / _answers.length).round();
-    widget.onCompleted(GameResult(
-      headline: score >= 50 ? 'Bravo !' : 'Continuez vos efforts',
-      detail: '$good bonne(s) réponse(s) sur ${_answers.length}.',
-      outcome: score >= 50 ? GameOutcome.success : GameOutcome.failure,
-      scorePercent: score,
-      answers: List.of(_answers),
-    ));
   }
 
   @override
@@ -82,13 +85,16 @@ class _QuizGameState extends State<QuizGame> {
               Text('Question ${_index + 1} / ${widget.questions.length}', style: text.bodySmall),
               const SizedBox(height: AppSpacing.xs),
               Text(q.prompt, style: text.titleLarge?.copyWith(color: EduColors.title)),
-              if (q.sceneEmoji != null) ...[
+              if (q.imageUrl != null) ...[
                 const SizedBox(height: AppSpacing.md),
                 Container(
-                  height: AppSizes.quizSceneHeight,
-                  alignment: Alignment.center,
                   decoration: const BoxDecoration(color: EduColors.thumbBg, borderRadius: AppRadius.lgAll),
-                  child: Text(q.sceneEmoji!, style: AppTypography.emojiLarge),
+                  child: NetworkPicture(
+                    url: q.imageUrl!,
+                    height: AppSizes.quizSceneHeight * 1.5,
+                    fit: BoxFit.contain,
+                    borderRadius: AppRadius.lgAll,
+                  ),
                 ),
               ],
               const SizedBox(height: AppSpacing.lg),
@@ -98,14 +104,19 @@ class _QuizGameState extends State<QuizGame> {
                   child: _OptionTile(
                     option: option,
                     selected: _selected == option.label,
-                    onTap: () => setState(() => _selected = option.label),
+                    onTap: _busy ? null : () => setState(() => _selected = option.label),
                   ),
                 ),
               const SizedBox(height: AppSpacing.sm),
               FilledButton(
                 style: FilledButton.styleFrom(backgroundColor: EduColors.play),
-                onPressed: _selected == null ? null : _validate,
-                child: const Text('Valider la réponse'),
+                onPressed: _selected == null || _busy ? null : _validate,
+                child: _busy
+                    ? const SizedBox.square(
+                        dimension: AppSizes.iconMd,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.white),
+                      )
+                    : const Text('Valider la réponse'),
               ),
             ],
           ),
@@ -121,7 +132,7 @@ class _OptionTile extends StatelessWidget {
 
   final QuizOption option;
   final bool selected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -141,8 +152,13 @@ class _OptionTile extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
             child: Row(
               children: [
-                if (option.emoji != null) ...[
-                  Text(option.emoji!, style: text.headlineMedium),
+                if (option.imageUrl != null) ...[
+                  NetworkPicture(
+                    url: option.imageUrl!,
+                    width: AppSizes.avatarXl,
+                    height: AppSizes.avatarXl,
+                    borderRadius: AppRadius.smAll,
+                  ),
                   const SizedBox(width: AppSpacing.md),
                 ],
                 Expanded(child: Text(option.label, style: text.bodyLarge)),
@@ -161,12 +177,25 @@ class _OptionTile extends StatelessWidget {
 
 // ─── Memory (pairs of images) ──────────────────────────────────────────────
 
+/// Sends a pair of flipped cards to the server, which tells whether they match.
+typedef MemoryMoveHandler = Future<MemoryMove> Function(int firstCardId, int secondCardId);
+
 /// Web `image-game.component`.
 class MemoryGame extends StatefulWidget {
-  const MemoryGame({super.key, required this.title, required this.cards, required this.onCompleted, required this.onCancel});
+  const MemoryGame({
+    super.key,
+    required this.title,
+    required this.cards,
+    required this.pairTotal,
+    required this.onMove,
+    required this.onCompleted,
+    required this.onCancel,
+  });
 
   final String title;
   final List<MemoryCardData> cards;
+  final int pairTotal;
+  final MemoryMoveHandler onMove;
   final ValueChanged<GameResult> onCompleted;
   final VoidCallback onCancel;
 
@@ -178,40 +207,49 @@ class _MemoryGameState extends State<MemoryGame> {
   final Set<int> _matched = {};
   final List<int> _faceUp = [];
   int _moves = 0;
+  int _pairsFound = 0;
+  late int _pairTotal = widget.pairTotal;
   bool _busy = false;
-
-  int get _pairTotal => widget.cards.length ~/ 2;
 
   Future<void> _flip(MemoryCardData card) async {
     if (_busy || _faceUp.contains(card.id) || _matched.contains(card.id)) return;
     setState(() => _faceUp.add(card.id));
     if (_faceUp.length < 2) return;
-    _moves++;
-    final a = widget.cards.firstWhere((c) => c.id == _faceUp[0]);
-    final b = widget.cards.firstWhere((c) => c.id == _faceUp[1]);
-    if (a.pairKey == b.pairKey) {
-      setState(() {
-        _matched.addAll(_faceUp);
-        _faceUp.clear();
-      });
-      if (_matched.length == widget.cards.length) {
-        final score = (_pairTotal * 100 / _moves).round().clamp(0, 100);
-        widget.onCompleted(GameResult(
-          headline: 'Toutes les paires trouvées !',
-          detail: 'Terminé en $_moves coups.',
-          outcome: GameOutcome.success,
-          scorePercent: score,
-        ));
-      }
-      return;
-    }
     _busy = true;
-    await Future<void>.delayed(const Duration(milliseconds: 800));
-    if (!mounted) return;
-    setState(() {
-      _faceUp.clear();
-      _busy = false;
-    });
+    try {
+      final move = await widget.onMove(_faceUp[0], _faceUp[1]);
+      if (!mounted) return;
+      setState(() {
+        _moves = move.moves;
+        _pairsFound = move.pairsFound;
+        _pairTotal = move.pairTotal;
+      });
+      if (move.match) {
+        setState(() {
+          _matched.addAll(_faceUp);
+          _faceUp.clear();
+        });
+        if (move.completed) {
+          widget.onCompleted(move.result ??
+              GameResult(
+                headline: 'Toutes les paires trouvées !',
+                detail: 'Terminé en $_moves coups.',
+                outcome: GameOutcome.success,
+              ));
+        }
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 750));
+    } catch (e) {
+      if (mounted) showAppSnackBar(context, '$e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _faceUp.clear();
+          _busy = false;
+        });
+      }
+    }
   }
 
   @override
@@ -222,7 +260,7 @@ class _MemoryGameState extends State<MemoryGame> {
       children: [
         Text(widget.title, style: text.titleLarge?.copyWith(color: EduColors.title)),
         const SizedBox(height: AppSpacing.xs),
-        Text('Coups : $_moves   ·   Paires : ${_matched.length ~/ 2} / $_pairTotal', style: text.bodyMedium),
+        Text('Coups : $_moves   ·   Paires : $_pairsFound / $_pairTotal', style: text.bodyMedium),
         const SizedBox(height: AppSpacing.lg),
         GridView.count(
           crossAxisCount: widget.cards.length > 12 ? 4 : 3,
@@ -273,12 +311,11 @@ class _MemoryTile extends StatelessWidget {
           onTap: matched ? null : onTap,
           child: Center(
             child: faceUp
-                ? Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(card.emoji, style: text.headlineLarge),
-                      Text(card.label, style: text.labelSmall),
-                    ],
+                ? Padding(
+                    padding: const EdgeInsets.all(AppSpacing.xs),
+                    child: card.imageUrl.isEmpty
+                        ? Text(card.label ?? '?', textAlign: TextAlign.center, style: text.labelLarge)
+                        : NetworkPicture(url: card.imageUrl, fit: BoxFit.contain, borderRadius: AppRadius.smAll),
                   )
                 : Text('?', style: text.headlineMedium?.copyWith(color: AppColors.white)),
           ),

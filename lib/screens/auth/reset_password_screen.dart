@@ -6,8 +6,11 @@ import '../../core/router/app_routes.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/utils/validators.dart';
+import '../../services/auth_service.dart';
 import '../../widgets/auth/auth_scaffold.dart';
+import '../../widgets/common/dialogs.dart';
 import '../../widgets/common/form_fields.dart';
+import '../../widgets/common/state_views.dart';
 
 /// Web `/auth/password-reset`: email + 6-digit code + new password.
 class ResetPasswordScreen extends StatefulWidget {
@@ -25,6 +28,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   final _code = TextEditingController();
   final _password = TextEditingController();
   final _confirm = TextEditingController();
+  bool _busy = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -34,9 +39,28 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     super.dispose();
   }
 
-  void _submit() {
-    if (!_formKey.currentState!.validate()) return;
-    context.go(AppRoutes.signIn);
+  /// Web `ResetPasswordComponent`: code + new password, then sign in again.
+  Future<void> _submit() async {
+    if (_busy || !_formKey.currentState!.validate()) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final message = await AuthService.instance.resetPassword(
+        email: _email.text.trim(),
+        code: _code.text.trim(),
+        newPassword: _password.text,
+      );
+      if (!mounted) return;
+      showAppSnackBar(context, message);
+      context.go(AppRoutes.signIn);
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
@@ -50,6 +74,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (_error != null) ...[
+              FeedbackBanner(message: _error!, onClose: () => setState(() => _error = null)),
+              const SizedBox(height: AppSpacing.md),
+            ],
             AppTextField(
               label: 'Email',
               controller: _email,
@@ -81,7 +109,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
               validator: (v) => v != _password.text ? 'Les mots de passe ne correspondent pas.' : null,
               onSubmitted: (_) => _submit(),
             ),
-            FilledButton(onPressed: _submit, child: const Text('RÉINITIALISER')),
+            FilledButton(
+              onPressed: _busy ? null : _submit,
+              child: _busy ? const ButtonSpinner() : const Text('RÉINITIALISER'),
+            ),
             const SizedBox(height: AppSpacing.lg),
             AuthFooterLink(text: 'Retour à la', action: 'connexion', onTap: () => context.go(AppRoutes.signIn)),
           ],

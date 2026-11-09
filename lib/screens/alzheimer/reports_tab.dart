@@ -1,9 +1,12 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/utils/formatters.dart';
 import '../../models/meeting.dart';
+import '../../services/api_client.dart';
+import '../../services/meeting_insights_service.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_chip.dart';
 import '../../widgets/common/form_fields.dart';
@@ -25,10 +28,23 @@ class _ReportsTabState extends State<ReportsTab> {
   final _language = TextEditingController(text: 'fr');
   final _transcript = TextEditingController();
 
-  // Filled by the meeting-insights API.
-  final List<MeetingReport> _reports = [];
-  final List<MeetingTranscription> _transcriptions = [];
+  final _service = MeetingInsightsService.instance;
+
+  List<MeetingReport> _reports = const [];
+  List<MeetingTranscription> _transcriptions = const [];
   MeetingReport? _selectedReport;
+  PlatformFile? _audio;
+  String? _transcriptionId;
+  bool _transcribing = false;
+  bool _generating = false;
+  bool _refreshing = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshHistory();
+  }
 
   @override
   void dispose() {
@@ -38,11 +54,91 @@ class _ReportsTabState extends State<ReportsTab> {
     super.dispose();
   }
 
-  void _runTranscription() {}
+  Future<void> _pickAudio() async {
+    final files = await FilePicker.pickFiles(type: FileType.audio);
+    if (files.isEmpty || !mounted) return;
+    setState(() {
+      _audio = files.first;
+      _error = null;
+    });
+  }
 
-  void _generateReport() {}
+  Future<void> _runTranscription() async {
+    final audio = _audio;
+    if (audio == null) {
+      setState(() => _error = 'Veuillez choisir un fichier audio.');
+      return;
+    }
+    setState(() {
+      _transcribing = true;
+      _error = null;
+    });
+    try {
+      final result = await _service.transcribe(
+        bytes: await audio.readAsBytes(),
+        filename: audio.name,
+        language: _language.text,
+      );
+      if (!mounted) return;
+      setState(() {
+        _transcript.text = result.text;
+        _transcriptionId = result.id;
+        _transcriptions = [result, ..._transcriptions];
+      });
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _transcribing = false);
+    }
+  }
 
-  void _refreshHistory() {}
+  Future<void> _generateReport() async {
+    final text = _transcript.text.trim();
+    if (text.isEmpty) {
+      setState(() => _error = 'La transcription est vide.');
+      return;
+    }
+    setState(() {
+      _generating = true;
+      _error = null;
+    });
+    try {
+      final report = await _service.generateReport(
+        text: text,
+        meetingTitle: _title.text,
+        language: _language.text,
+        transcriptionId: _transcriptionId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _selectedReport = report;
+        _reports = [report, ..._reports];
+      });
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _generating = false);
+    }
+  }
+
+  Future<void> _refreshHistory() async {
+    setState(() {
+      _refreshing = true;
+      _error = null;
+    });
+    try {
+      final results = await Future.wait([_service.getReports(), _service.getTranscriptions()]);
+      if (!mounted) return;
+      setState(() {
+        _reports = results[0] as List<MeetingReport>;
+        _transcriptions = results[1] as List<MeetingTranscription>;
+      });
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -61,32 +157,37 @@ class _ReportsTabState extends State<ReportsTab> {
               const SectionHeader(title: 'Meeting Insights', icon: Icons.mic_none_rounded, color: ModuleColors.alzheimerDeep),
               AppTextField(label: 'Titre reunion', controller: _title, hint: 'Ex: Reunion equipe soins'),
               AppTextField(label: 'Langue', controller: _language, hint: 'fr'),
-              const LabeledField(
+              LabeledField(
                 label: 'Audio',
                 child: UploadArea(
                   icon: Icons.audio_file_outlined,
-                  title: 'Sélectionner un fichier audio',
+                  title: _audio?.name ?? 'Sélectionner un fichier audio',
                   subtitle: 'MP3, M4A, WAV',
                   height: AppSizes.uploadHeightMd,
+                  onTap: _pickAudio,
                 ),
               ),
               FilledButton.icon(
                 style: FilledButton.styleFrom(backgroundColor: ModuleColors.alzheimer),
-                onPressed: _runTranscription,
+                onPressed: _transcribing ? null : _runTranscription,
                 icon: const Icon(Icons.record_voice_over_outlined),
-                label: const Text('Transcrire le discours'),
+                label: Text(_transcribing ? 'Transcription...' : 'Transcrire le discours'),
               ),
               const SizedBox(height: AppSpacing.sm),
               OutlinedButton.icon(
-                onPressed: _generateReport,
+                onPressed: _generating ? null : _generateReport,
                 icon: const Icon(Icons.summarize_outlined),
-                label: const Text('Generer le rapport'),
+                label: Text(_generating ? 'Generation...' : 'Generer le rapport'),
               ),
               TextButton.icon(
-                onPressed: _refreshHistory,
+                onPressed: _refreshing ? null : _refreshHistory,
                 icon: const Icon(Icons.refresh_rounded),
                 label: const Text('Rafraichir'),
               ),
+              if (_error != null) ...[
+                const SizedBox(height: AppSpacing.sm),
+                FeedbackBanner(message: _error!),
+              ],
             ],
           ),
         ),
@@ -139,7 +240,10 @@ class _ReportsTabState extends State<ReportsTab> {
               title: Text(t.filename),
               subtitle: Text('${Formatters.dateTime(t.createdAt)} • ${t.language}'),
               trailing: TextButton(
-                onPressed: () => setState(() => _transcript.text = t.text),
+                onPressed: () => setState(() {
+                  _transcript.text = t.text;
+                  _transcriptionId = t.id;
+                }),
                 child: const Text('Voir transcript'),
               ),
             ),

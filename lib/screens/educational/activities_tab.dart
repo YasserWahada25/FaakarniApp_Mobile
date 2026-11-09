@@ -5,6 +5,7 @@ import '../../core/router/app_routes.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../models/educational.dart';
+import '../../services/educational_service.dart';
 import '../../widgets/common/async_state_view.dart';
 import '../../widgets/common/shimmer.dart';
 import '../../widgets/common/state_views.dart';
@@ -19,16 +20,41 @@ class ActivitiesTab extends StatefulWidget {
 }
 
 class _ActivitiesTabState extends State<ActivitiesTab> {
-  // Filled by the activities API.
-  final List<EducationalActivity> _activities = [];
-  ViewStatus _status = ViewStatus.ready;
+  List<EducationalActivity> _activities = [];
+  ViewStatus _status = ViewStatus.loading;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
 
   Future<void> _load() async {
     setState(() {
-      _status = ViewStatus.ready;
+      if (_activities.isEmpty) _status = ViewStatus.loading;
       _error = null;
     });
+    try {
+      final list = await EducationalService.instance.getActivities();
+      if (!mounted) return;
+      setState(() {
+        _activities = list;
+        _status = ViewStatus.ready;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '$e';
+        _status = ViewStatus.error;
+      });
+    }
+  }
+
+  /// Reloads the catalogue on return so the card shows the latest score.
+  Future<void> _play(EducationalActivity activity) async {
+    await context.push(AppRoutes.activityPlay(activity.id), extra: activity);
+    if (mounted) _load();
   }
 
   @override
@@ -77,7 +103,7 @@ class _ActivitiesTabState extends State<ActivitiesTab> {
               itemCount: _activities.length,
               itemBuilder: (context, i) => ActivityCard(
                 activity: _activities[i],
-                onPlay: () => context.push(AppRoutes.activityPlay(_activities[i].id), extra: _activities[i]),
+                onPlay: () => _play(_activities[i]),
               ),
             ),
           ),

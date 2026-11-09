@@ -26,6 +26,14 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>La caméra est utilisée pendant les séances vidéo.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Le micro est utilisé pendant les séances vidéo.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Votre position sert à localiser une séance présentielle.</string>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>L'accès aux fichiers audio permet de transcrire un enregistrement de réunion.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

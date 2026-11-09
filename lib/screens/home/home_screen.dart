@@ -8,6 +8,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_decorations.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_typography.dart';
+import '../../providers/auth_provider.dart';
 import '../../widgets/common/app_logo.dart';
 import '../../widgets/common/dialogs.dart';
 import '../../widgets/common/network_picture.dart';
@@ -50,7 +51,8 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             tooltip: 'Logout',
             icon: const Icon(Icons.logout_rounded),
-            onPressed: () => context.go(AppRoutes.signIn),
+            // The router sends the signed-out user back to the sign-in page.
+            onPressed: AuthProvider.instance.signOut,
           ),
         ],
       ),

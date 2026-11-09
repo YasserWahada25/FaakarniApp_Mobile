@@ -201,3 +201,14 @@ class AppDropdownField<T> extends StatelessWidget {
     );
   }
 }
+
+/// Spinner shown in place of a button label while its request runs.
+class ButtonSpinner extends StatelessWidget {
+  const ButtonSpinner({super.key});
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.square(
+        dimension: AppSizes.iconMd,
+        child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.white),
+      );
+}

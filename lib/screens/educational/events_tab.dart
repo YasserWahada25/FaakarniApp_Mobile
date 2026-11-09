@@ -5,8 +5,10 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_decorations.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../models/educational.dart';
+import '../../services/educational_service.dart';
 import '../../widgets/common/app_map.dart';
 import '../../widgets/common/async_state_view.dart';
+import '../../widgets/common/dialogs.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/educational/activity_widgets.dart';
 
@@ -19,21 +21,44 @@ class EventsTab extends StatefulWidget {
 }
 
 class _EventsTabState extends State<EventsTab> {
-  // Filled by the events API.
-  final List<EducationalEvent> _events = [];
-  ViewStatus _status = ViewStatus.ready;
+  List<EducationalEvent> _events = [];
+  ViewStatus _status = ViewStatus.loading;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
 
   Future<void> _load() async {
     setState(() {
-      _status = ViewStatus.ready;
+      if (_events.isEmpty) _status = ViewStatus.loading;
       _error = null;
     });
+    try {
+      final list = await EducationalService.instance.getEvents();
+      if (!mounted) return;
+      setState(() {
+        _events = list;
+        _status = ViewStatus.ready;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '$e';
+        _status = ViewStatus.error;
+      });
+    }
   }
 
   /// Web `MapModalComponent`.
   void _openMap(EducationalEvent event) {
-    final point = LatLng(event.latitude, event.longitude);
+    if (!event.hasCoordinates) {
+      showAppSnackBar(context, 'Coordonnées indisponibles pour « ${event.location} ».');
+      return;
+    }
+    final point = LatLng(event.latitude!, event.longitude!);
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,

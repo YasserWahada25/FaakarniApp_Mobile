@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/constants/app_constants.dart';
 import '../../core/router/app_routes.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/utils/validators.dart';
+import '../../providers/auth_provider.dart';
 import '../../widgets/auth/auth_scaffold.dart';
+import '../../widgets/common/dialogs.dart';
 import '../../widgets/common/form_fields.dart';
+import '../../widgets/common/state_views.dart';
 
 /// Web `/auth/signin`.
 class SignInScreen extends StatefulWidget {
@@ -22,6 +24,8 @@ class _SignInScreenState extends State<SignInScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   bool _rememberMe = false;
+  bool _busy = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -30,11 +34,27 @@ class _SignInScreenState extends State<SignInScreen> {
     super.dispose();
   }
 
-  void _submit() {
-    // Validation is bypassed while the auth API is not wired (see AppConstants.skipAuth).
-    if (!AppConstants.skipAuth && !_formKey.currentState!.validate()) return;
-    context.go(AppRoutes.home);
+  /// Web `SignInComponent.onSubmit`; the router then opens Home.
+  Future<void> _submit() async {
+    if (_busy || !_formKey.currentState!.validate()) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await AuthProvider.instance.signIn(_email.text, _password.text, remember: _rememberMe);
+      if (mounted) context.go(AppRoutes.home);
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
+
+  /// Google / Facebook need the native SDKs and their OAuth app ids.
+  void _socialSignIn(String provider) =>
+      showAppSnackBar(context, 'La connexion $provider n’est pas encore disponible sur mobile.');
 
   @override
   Widget build(BuildContext context) {
@@ -48,6 +68,10 @@ class _SignInScreenState extends State<SignInScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (_error != null) ...[
+                FeedbackBanner(message: _error!, onClose: () => setState(() => _error = null)),
+                const SizedBox(height: AppSpacing.md),
+              ],
               AppTextField(
                 label: 'Email Address',
                 controller: _email,
@@ -87,7 +111,10 @@ class _SignInScreenState extends State<SignInScreen> {
                 ],
               ),
               const SizedBox(height: AppSpacing.md),
-              FilledButton(onPressed: _submit, child: const Text('SIGN IN')),
+              FilledButton(
+                onPressed: _busy ? null : _submit,
+                child: _busy ? const ButtonSpinner() : const Text('SIGN IN'),
+              ),
               const SizedBox(height: AppSpacing.xxl),
               Row(
                 children: [
@@ -105,14 +132,14 @@ class _SignInScreenState extends State<SignInScreen> {
                   foregroundColor: AppColors.googleText,
                   side: const BorderSide(color: AppColors.border),
                 ),
-                onPressed: () => context.go(AppRoutes.home),
+                onPressed: () => _socialSignIn('Google'),
                 icon: const Icon(Icons.g_mobiledata_rounded, size: AppSizes.iconLg),
                 label: const Text('Sign in with Google'),
               ),
               const SizedBox(height: AppSpacing.md),
               FilledButton.icon(
                 style: FilledButton.styleFrom(backgroundColor: AppColors.facebook),
-                onPressed: () => context.go(AppRoutes.home),
+                onPressed: () => _socialSignIn('Facebook'),
                 icon: const Icon(Icons.facebook_rounded),
                 label: const Text('Sign in with Facebook'),
               ),

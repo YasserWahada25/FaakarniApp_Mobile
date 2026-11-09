@@ -5,6 +5,7 @@ import '../../core/router/app_routes.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_decorations.dart';
 import '../../core/theme/app_dimens.dart';
+import '../../providers/auth_provider.dart';
 import '../common/app_logo.dart';
 import '../common/dialogs.dart';
 
@@ -92,6 +93,16 @@ class AppDrawer extends StatelessWidget {
                       'Seniors deserve a better life',
                       style: text.bodySmall?.copyWith(color: AppColors.primaryLight),
                     ),
+                    if (AuthProvider.instance.user case final user?) ...[
+                      const SizedBox(height: AppSpacing.md),
+                      Text(user.fullName, style: text.titleSmall?.copyWith(color: AppColors.white)),
+                      Text(
+                        '${user.role.label} · ${user.email}',
+                        style: text.bodySmall?.copyWith(color: AppColors.primaryLight),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -140,7 +151,8 @@ class AppDrawer extends StatelessWidget {
                   title: Text('Logout', style: text.bodyLarge?.copyWith(color: AppColors.error)),
                   onTap: () {
                     Navigator.of(context).pop();
-                    context.go(AppRoutes.signIn);
+                    // The router sends the signed-out user back to the sign-in page.
+                    AuthProvider.instance.signOut();
                   },
                 ),
               ],
